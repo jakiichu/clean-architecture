@@ -9,7 +9,7 @@ function Feature({title, src, description}: FeatureItem) {
     return (
         <div className={clsx('col col--4')}>
             <div className="text--center">
-                <img src={src} className={styles.featureSvg} role="img"/>
+                <img alt='' src={src} className={styles.featureSvg} role="img"/>
             </div>
             <div className="text--center padding-horiz--md">
                 <Heading as="h3">{title}</Heading>
