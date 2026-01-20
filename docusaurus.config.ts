@@ -41,7 +41,7 @@ const config: Config = {
 
     // GitHub pages deployment config.
     // If you aren't using GitHub pages, you don't need these.
-    organizationName: 'IPST', // Usually your GitHub org/user name.
+    organizationName: 'Dirty architecture', // Usually your GitHub org/user name.
     projectName: 'Clean architecture', // Usually your repo name.
 
     onBrokenLinks: 'throw',
@@ -116,13 +116,13 @@ const config: Config = {
                     title: 'Docs',
                     items: [
                         {
-                            label: 'Tutorial',
+                            label: 'Введение',
                             to: '/docs/intro',
                         },
                     ],
                 },
             ],
-            copyright: `© ООО «Айпиэсти» ${new Date().getFullYear()}`,
+            copyright: `© "Dirty architecture" ${new Date().getFullYear()}`,
         },
         prism: {
             theme: prismThemes.vsLight,
