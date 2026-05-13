@@ -21,14 +21,13 @@ sidebar_position: 5
 
 ### Шаг 1. Описание контрактов в Domain
 
-Для примера возьмём сценарий проверки SMS-кода (как описано в ТЗ Спринта 6).
+Для примера возьмём сценарий проверки SMS-кода при авторизации.
 
 ```typescript
 // domain/auth/interface/dto.ts
 interface IAuthSessionDto {
   sessionToken: string;
   userGuid: string;
-  deviceFingerprint: string;
 }
 ```
 
@@ -37,7 +36,6 @@ interface IAuthSessionDto {
 interface IVerifySmsCodePort {
   phoneNumber: string;
   smsCode: string;
-  deviceFingerprint: string;
 }
 ```
 
@@ -108,14 +106,12 @@ class AuthRepository implements IAuthRepository {
       const response = await this.httpClient.post('/api/v1/auth/verify', {
         phone: port.phoneNumber,
         code: port.smsCode,
-        fingerprint: port.deviceFingerprint,
       });
 
       // Маппинг ответа API в доменный DTO
       return {
         sessionToken: response.data.access_token,
         userGuid: response.data.user_guid,
-        deviceFingerprint: port.deviceFingerprint,
       };
     } catch (error) {
       // Трансформация сетевых ошибок в доменные или инфраструктурные
@@ -188,7 +184,6 @@ export function SmsVerificationScreen() {
     mutation.mutate({
       phoneNumber: '+79990000000',
       smsCode: code,
-      deviceFingerprint: 'device-id-123',
     });
   };
 
@@ -224,7 +219,7 @@ export function SmsVerificationScreen() {
 | **Кэширование** | Да (с настройками staleTime) | Нет (всегда свежий вызов) |
 | **Побочные эффекты** | Обычно нет (чистые данные) | Много (навигация, сторадж, тосты) |
 | **Место эффектов** | В `useEffect` от `data` или `onSuccess` | В `onSuccess` / `onError` коллбэках |
-| **Пример из ТЗ** | Получение профиля, списка пропусков | Вход по SMS, генерация QR, выход |
+| **Пример** | Получение профиля, ленты уведомлений | Вход по SMS, отправка формы, выход |
 
 ## Чек-лист для мутаций
 

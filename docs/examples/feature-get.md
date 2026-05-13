@@ -1,13 +1,13 @@
 ---
-title: Пример реализации фичи (GET-запрос)
+title: Пример — Получение данных (GET)
 sidebar_position: 4
 ---
 
-# Пример реализации фичи: получение данных (GET)
+# Пример: Получение данных (GET)
 
 В данном разделе разобран пошаговый подход к созданию функциональной единицы, отвечающей за получение данных с сервера. Пример демонстрирует, как архитектурные принципы Clean Architecture применяются на практике: от описания контрактов в `Domain` до интеграции с UI-слоем в `App`.
 
-Материал носит рекомендательный характер и не привязан к конкретному фреймворку. В примерах используются общие паттерны, которые легко адаптировать под React, Vue, Angular или мобильные платформы.
+Приведены два варианта: **универсальный** (список пользователей) и **мобильный** (лента уведомлений с пагинацией и FlatList).
 
 ## Почему разработка начинается с Domain
 
@@ -16,7 +16,7 @@ sidebar_position: 4
 - Бизнес-логика не подстраивается под возможности UI или особенности HTTP-клиента
 - Контракты становятся точкой согласования между фронтенд, бэкенд и мобильными командами
 - Инфраструктурные детали (кэширование, ретраи, маппинг ответов) изолируются и заменяются без влияния на ядро
-- Use-case покрываются unit-тестами в изоляции от сети и браузера
+- Use-case покрываются unit-тестами в изоляции от сети и устройства
 
 ## Контракты важнее реализации
 
@@ -27,13 +27,11 @@ sidebar_position: 4
 3. **Repository Interface** — абстракция доступа к источнику данных
 4. **Use-case Interface** — контракт бизнес-сценария
 
-Только после утверждения контрактов переходят к реализации. Это позволяет параллелизовать работу: бэкенд адаптирует ответы под DTO, фронтенд верстает интерфейсы под Port, а тестировщики готовят сценарии под Use-case.
+---
 
-## Пошаговая реализация
+## Вариант 1: Универсальный пример (список пользователей)
 
 ### Шаг 1. Описание контрактов в Domain
-
-Контракты размещаются в `domain/{feature}/interface/`. Они не содержат логики, только типы и сигнатуры.
 
 ```typescript
 // domain/users/interface/dto.ts
@@ -77,25 +75,15 @@ interface IGetUsersUseCase {
 
 ### Шаг 2. Реализация бизнес-сценария (Use-case)
 
-Use-case координирует вызов репозитория, применяет доменные правила и возвращает результат. Не знает о HTTP, кэше или UI.
-
 ```typescript
 // domain/users/use-case/get-users.ts
-import type { IGetUsersUseCase } from '../interface/use-case';
-import type { IGetUsersPort } from '../interface/port';
-import type { IUsersListDto } from '../interface/dto';
-import type { IUsersRepository } from '../interface/repository';
-
 class GetUsersUseCase implements IGetUsersUseCase {
   constructor(private readonly usersRepository: IUsersRepository) {}
 
   async execute(port: IGetUsersPort): Promise<IUsersListDto> {
-    // Доменная валидация входных параметров
     if (port.page < 0 || port.limit <= 0) {
       throw new Error('Invalid pagination parameters');
     }
-
-    // Делегирование инфраструктуре
     return this.usersRepository.getUsersList(port);
   }
 }
@@ -105,14 +93,8 @@ export { GetUsersUseCase };
 
 ### Шаг 3. Инфраструктурная реализация (Data)
 
-Слой `Data` реализует контракты `Domain`. Здесь происходит работа с сетью, маппинг ответов, обработка ошибок и ретраи.
-
 ```typescript
 // data/repositories/users/users-repository.ts
-import type { IUsersRepository } from '../../../domain/users/interface/repository';
-import type { IGetUsersPort } from '../../../domain/users/interface/port';
-import type { IUsersListDto } from '../../../domain/users/interface/dto';
-
 class UsersRepository implements IUsersRepository {
   constructor(private readonly httpClient: HttpClient) {}
 
@@ -121,13 +103,12 @@ class UsersRepository implements IUsersRepository {
       params: { page: port.page, limit: port.limit, q: port.searchQuery },
     });
 
-    // Маппинг внешнего ответа в доменный DTO
     return {
-      items: response.data.items.map((item: any) => ({
-        id: item.id,
-        fullName: `${item.first_name} ${item.last_name}`,
-        email: item.email,
-        avatarUrl: item.avatar_url || null,
+      items: response.data.items.map((item: unknown) => ({
+        id: (item as any).id,
+        fullName: `${(item as any).first_name} ${(item as any).last_name}`,
+        email: (item as any).email,
+        avatarUrl: (item as any).avatar_url ?? null,
       })),
       total: response.data.total_count,
       page: response.data.current_page,
@@ -139,9 +120,7 @@ class UsersRepository implements IUsersRepository {
 export { UsersRepository };
 ```
 
-### Шаг 4. Интеграция в App-слой
-
-В `App` use-case вызывается через адаптер запросов. Здесь управляется жизненный цикл данных: кэширование, статусы загрузки, пагинация UI, обработка ошибок сети.
+### Шаг 4. Хук в App
 
 ```typescript
 // app/modules/users/hooks/use-users-query.ts
@@ -155,84 +134,309 @@ export function useUsersQuery(port: IGetUsersPort) {
   return useQuery({
     queryKey: ['users', port.page, port.limit, port.searchQuery],
     queryFn: () => useCase.execute(port),
-    staleTime: 1000 * 60 * 5, // 5 минут
+    staleTime: 1000 * 60 * 5,
     retry: 1,
   });
 }
 ```
 
-### Шаг 5. Презентер и UI
+---
 
-Презентер агрегирует данные из запроса, управляет формой поиска/пагинации и подготавливает структуру для компонентов. UI остаётся «глупым» и отвечает только за отрисовку.
+## Вариант 2: Мобильный пример — Лента уведомлений
+
+Этот пример ближе к реальному мобильному приложению: лента уведомлений с FlatList, pull-to-refresh и индикатором непрочитанных.
+
+### Шаг 1. Контракты в Domain
 
 ```typescript
-// app/modules/users/presenters/users-presenter.ts
+// domain/notifications/entities/INotification.ts
+type TNotificationPriority = 'low' | 'normal' | 'high';
+
+interface INotification {
+  id: string;
+  title: string;
+  body: string;
+  isRead: boolean;
+  priority: TNotificationPriority;
+  createdAtTimestamp: number;
+}
+
+interface INotificationsListDto {
+  items: INotification[];
+  total: number;
+  unreadCount: number;
+}
+
+export type { INotification, INotificationsListDto, TNotificationPriority };
+```
+
+```typescript
+// domain/notifications/interfaces/INotificationsRepository.ts
+interface IGetNotificationsPort {
+  page: number;
+  limit: number;
+  onlyUnread?: boolean;
+}
+
+interface INotificationsRepository {
+  getNotifications: (port: IGetNotificationsPort) => Promise<INotificationsListDto>;
+}
+
+export type { INotificationsRepository, IGetNotificationsPort };
+```
+
+```typescript
+// domain/notifications/use-cases/GetNotificationsUseCase.ts
+import type { INotificationsRepository, IGetNotificationsPort } from '../interfaces/INotificationsRepository';
+import type { INotificationsListDto } from '../entities/INotification';
+
+const createGetNotificationsUseCase = (repository: INotificationsRepository) => {
+  const execute = async (port: IGetNotificationsPort): Promise<INotificationsListDto> => {
+    if (port.limit <= 0 || port.limit > 100) {
+      throw new Error('Limit must be between 1 and 100');
+    }
+    return repository.getNotifications(port);
+  };
+
+  return { execute };
+};
+
+export { createGetNotificationsUseCase };
+```
+
+### Шаг 2. Репозиторий в Data
+
+```typescript
+// data/repositories/NotificationsRepository.ts
+import type { INotificationsRepository, IGetNotificationsPort } from '@domain/notifications/interfaces/INotificationsRepository';
+import type { INotificationsListDto, TNotificationPriority } from '@domain/notifications/entities/INotification';
+import { axiosInstance } from '@data/instance/AxiosInstance';
+
+// Внутренний тип ответа API — не экспортируется
+interface INotificationsApiResponse {
+  data: Array<{
+    id: string;
+    title: string;
+    message: string;
+    read: boolean;
+    priority: string;
+    created_at: string;
+  }>;
+  meta: {
+    total: number;
+    unread_count: number;
+  };
+}
+
+class NotificationsRepository implements INotificationsRepository {
+  async getNotifications(port: IGetNotificationsPort): Promise<INotificationsListDto> {
+    const responseValue = await axiosInstance.get<INotificationsApiResponse>('/notifications', {
+      params: {
+        page: port.page,
+        per_page: port.limit,
+        unread_only: port.onlyUnread ?? false,
+      },
+    });
+
+    return {
+      items: responseValue.data.data.map((apiItem) => ({
+        id: apiItem.id,
+        title: apiItem.title,
+        body: apiItem.message,
+        isRead: apiItem.read,
+        priority: apiItem.priority as TNotificationPriority,
+        createdAtTimestamp: new Date(apiItem.created_at).getTime(),
+      })),
+      total: responseValue.data.meta.total,
+      unreadCount: responseValue.data.meta.unread_count,
+    };
+  }
+}
+
+export { NotificationsRepository };
+```
+
+### Шаг 3. Хук в App с pull-to-refresh
+
+```typescript
+// src/common/hooks/useNotificationsQuery.ts
+import { useQuery } from '@tanstack/react-query';
+import { createGetNotificationsUseCase } from '@domain/notifications/use-cases/GetNotificationsUseCase';
+import { NotificationsRepository } from '@data/repositories/NotificationsRepository';
+import { QUERY_KEYS } from '@/common/const/queryKeys';
+
+const repositoryInstance = new NotificationsRepository();
+const useCaseInstance = createGetNotificationsUseCase(repositoryInstance);
+
+const useNotificationsQuery = (onlyUnread = false) => {
+  return useQuery({
+    queryKey: QUERY_KEYS.NOTIFICATIONS.LIST(onlyUnread),
+    queryFn: () => useCaseInstance.execute({ page: 0, limit: 50, onlyUnread }),
+    staleTime: 1000 * 60 * 2, // 2 минуты — уведомления меняются чаще
+    gcTime: 1000 * 60 * 30,
+  });
+};
+
+export { useNotificationsQuery };
+```
+
+### Шаг 4. Презентер с логикой фильтрации
+
+```typescript
+// app/modules/notifications/useNotificationsPresenter.ts
 import { useState, useCallback } from 'react';
-import { useUsersQuery } from '../hooks/use-users-query';
+import { useNotificationsQuery } from '@/common/hooks/useNotificationsQuery';
 
-export function useUsersPresenter() {
-  const [filters, setFilters] = useState<IGetUsersPort>({ page: 0, limit: 20 });
-  const { data, isLoading, isError, refetch } = useUsersQuery(filters);
+const useNotificationsPresenter = () => {
+  const [showOnlyUnread, setShowOnlyUnread] = useState<boolean>(false);
+  const { data, isLoading, isError, refetch, isFetching } = useNotificationsQuery(showOnlyUnread);
 
-  const handleSearch = useCallback((query: string) => {
-    setFilters(prev => ({ ...prev, page: 0, searchQuery: query }));
-  }, []);
+  const handleRefresh = useCallback(() => { refetch(); }, [refetch]);
 
-  const handlePageChange = useCallback((page: number) => {
-    setFilters(prev => ({ ...prev, page }));
+  const handleToggleFilter = useCallback(() => {
+    setShowOnlyUnread((prev) => !prev);
   }, []);
 
   return {
-    users: data?.items || [],
-    total: data?.total || 0,
+    notifications: data?.items ?? [],
+    unreadCount: data?.unreadCount ?? 0,
+    total: data?.total ?? 0,
     isLoading,
+    isRefreshing: isFetching && !isLoading,
     isError,
-    filters,
-    onSearch: handleSearch,
-    onPageChange: handlePageChange,
-    onRefresh: refetch,
+    showOnlyUnread,
+    onRefresh: handleRefresh,
+    onToggleFilter: handleToggleFilter,
   };
+};
+
+export { useNotificationsPresenter };
+```
+
+### Шаг 5. Компонент — FlatList с pull-to-refresh
+
+```tsx
+// app/modules/notifications/NotificationsScreen.tsx
+import React from 'react';
+import { View, FlatList, RefreshControl, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { useNotificationsPresenter } from './useNotificationsPresenter';
+
+export default function NotificationsScreen() {
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    isRefreshing,
+    isError,
+    showOnlyUnread,
+    onRefresh,
+    onToggleFilter,
+  } = useNotificationsPresenter();
+
+  if (isLoading) {
+    return (
+      <View style={styles.centered}>
+        {/* Skeleton-плейсхолдеры для структурированного списка */}
+        {[0, 1, 2, 3].map((index) => (
+          <View key={index} style={styles.skeleton} />
+        ))}
+      </View>
+    );
+  }
+
+  if (isError) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>Не удалось загрузить уведомления</Text>
+        <TouchableOpacity onPress={onRefresh}>
+          <Text style={styles.retryText}>Повторить</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Фильтр непрочитанных */}
+      <View style={styles.filterRow}>
+        <TouchableOpacity onPress={onToggleFilter} style={styles.filterButton}>
+          <Text style={styles.filterLabel}>
+            {showOnlyUnread ? 'Показать все' : `Непрочитанные (${unreadCount})`}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <FlatList
+        data={notifications}
+        keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} />
+        }
+        renderItem={({ item }) => (
+          <View style={[styles.card, !item.isRead && styles.cardUnread]}>
+            <Text style={styles.cardTitle}>{item.title}</Text>
+            <Text style={styles.cardBody}>{item.body}</Text>
+          </View>
+        )}
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>
+            {showOnlyUnread ? 'Все уведомления прочитаны' : 'Нет уведомлений'}
+          </Text>
+        }
+      />
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
+  filterRow: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  filterButton: { alignSelf: 'flex-start' },
+  filterLabel: { color: '#007AFF', fontSize: 14 },
+  card: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  cardUnread: { backgroundColor: '#f0f6ff' },
+  cardTitle: { fontSize: 15, fontWeight: '600', marginBottom: 4 },
+  cardBody: { fontSize: 14, color: '#555' },
+  emptyText: { textAlign: 'center', color: '#999', marginTop: 48, fontSize: 15 },
+  skeleton: { height: 72, backgroundColor: '#f0f0f0', borderRadius: 8, marginHorizontal: 16, marginVertical: 6 },
+  errorText: { fontSize: 15, color: '#333', marginBottom: 12, textAlign: 'center' },
+  retryText: { color: '#007AFF', fontSize: 15 },
+});
 ```
 
-## Структура файлов фичи
+## Структура файлов фичи (мобильный вариант)
 
 ```
-src/
-├── domain/
-│   └── users/
-│       ├── interface/
-│       │   ├── dto.ts
-│       │   ├── port.ts
-│       │   ├── repository.ts
-│       │   └── use-case.ts
-│       └── use-case/
-│           └── get-users.ts
-├── data/
-│   ── repositories/
-│       └── users/
-│           └── users-repository.ts
-└── app/
-    └── modules/
-        └── users/
-            ├── hooks/
-            │   └── use-users-query.ts
-            ├── presenters/
-            │   └── users-presenter.ts
-            ── components/
-                ├── users-list.tsx
-                └── users-filters.tsx
+domain/notifications/
+├── entities/
+│   └── INotification.ts
+├── interfaces/
+│   └── INotificationsRepository.ts
+└── use-cases/
+    └── GetNotificationsUseCase.ts
+
+data/repositories/
+└── NotificationsRepository.ts
+
+src/common/hooks/
+└── useNotificationsQuery.ts
+
+app/modules/notifications/
+├── useNotificationsPresenter.ts
+└── NotificationsScreen.tsx
 ```
 
 ## Рекомендации по масштабированию
 
-- **Сквозные концепции** (пагинация, сортировка, базовые DTO) выносятся в `domain/common` и переиспользуются между фичами
-- **Базовые классы** для use-case и репозиториев уменьшают дублирование при добавлении новых сценариев (Create, Update, Delete)
-- **Разделение Request и Presenter** упрощает тестирование: хук запроса проверяется на корректность ключей кэша и параметры, презентер — на логику агрегации и управление состоянием UI
-- **Обработка ошибок** происходит на границе слоёв: инфраструктурные ошибки маппятся в пользовательские сообщения в `App`, доменные ошибки выбрасываются из `Domain` и перехватываются презентером
+- **Сквозные концепции** (пагинация, базовые DTO) выносятся в `domain/common` и переиспользуются между фичами
+- **Бесконечная прокрутка** реализуется через `useInfiniteQuery` при необходимости; use-case и репозиторий не меняются, только хук в App
+- **Разделение хука запроса и презентера** упрощает тестирование: хук проверяется на корректность ключей кэша, презентер — на логику фильтрации и агрегации
+- **Skeleton вместо Spinner** — для структурированных списков предпочтительнее показывать заглушки нужного размера, а не центральный спиннер
 
 ## Дальнейшее чтение
 
-- [Слои архитектуры](../layers.md) — детальное описание зон ответственности
-- [Управление состоянием](../cross-cutting/state-management) — границы клиентского и серверного состояния
-- [Стандарты кода](../coding-standards.md) — правила нейминга, типизации и организации экспортов
+- [Слои архитектуры](../layers.md) — зоны ответственности
+- [Управление состоянием](../cross-cutting/state-management.md) — Server State vs. UI State
+- [Пример мутации (POST)](./feature-post.md) — операции изменения данных
+- [Оффлайн-режим](./offline-mode.md) — кэш при отсутствии сети

@@ -95,8 +95,8 @@ domain/
 │   │   ├── repository/ # Контракты доступа (IAuthRepository)
 │   │   └── use-case/   # Контракты сценариев (IVerifySmsCodeUseCase)
 │   ├── use-case/    # Реализации бизнес-сценариев
-│   └── entities/    # Доменные сущности (User, Device, Session)
-├── qr/              # Предметная область: генерация, валидация
+│   └── entities/    # Доменные сущности (User, Session)
+├── notifications/   # Предметная область: уведомления, ленты
 ├── common/          # Сквозные доменные контракты
 │   ├── pagination/  # IBasePaginationPort, IBasePaginatedDto
 │   └── errors/      # DomainError, ValidationError
@@ -144,7 +144,7 @@ data/
 │   └── endpoints/   # Типизированные маршруты
 ├── repositories/    # Реализация портов из domain
 │   ├── auth/        # AuthRepository implements IAuthRepository
-│   └── qr/          # QRRepository implements IQRRepository
+│   └── notifications/ # NotificationsRepository implements INotificationsRepository
 ├── storage/         # Адаптеры хранилищ
 │   ├── SecureSessionStorage.ts
 │   └── PinSecureStorageAdapter.ts
@@ -174,10 +174,10 @@ data/
 | Ситуация | Правильное размещение | Почему |
 |----------|----------------------|--------|
 | Валидация формата email в форме | `app/modules/.../presenter` или UI-библиотека | Синтаксическая проверка, не бизнес-правило |
-| Проверка, что пользователь может генерировать QR | `domain/qr/use-cases/CanGenerateQRUseCase` | Бизнес-инвариант, зависит от статуса сессии и прав |
+| Проверка, что пользователь имеет право выполнить действие | `domain/auth/use-cases/CanPerformActionUseCase` | Бизнес-инвариант, зависит от статуса сессии и прав |
 | Сохранение токена после входа | `data/storage/SecureSessionStorage.ts` | Инфраструктурная операция, привязана к OS |
 | Отображение спиннера при загрузке | `app/common/ui/FullScreenLoader.tsx` | UI-состояние, не влияет на логику |
-| Ротация криптографических ключей | `domain/crypto/use-cases/RotateKeysUseCase` | Бизнес-процесс с чёткими правилами и сроками |
+| Расчёт срока жизни временного токена | `domain/otp/use-cases/ValidateTokenUseCase` | Бизнес-инвариант, зависит от временной метки |
 | Маппинг ответа API в DTO | `data/mappers/sessionMapper.ts` | Инфраструктурная адаптация, скрывает формат бэкенда |
 
 ---

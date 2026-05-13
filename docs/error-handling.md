@@ -14,8 +14,8 @@ sidebar_position: 11
 | Тип ошибки | Источник | Где перехватывается | Примеры                                                                           |
 |------------|----------|---------------------|-----------------------------------------------------------------------------------|
 | **Инфраструктурная (Infrastructure)** | Сетевой стек, таймауты, отсутствие интернета, ошибки парсинга JSON, ограничения ОС (Keychain заблокирован) | `Data` (репозитории, адаптеры, HTTP-клиент) | `ERR_NETWORK`, `TIMEOUT`, `SECURE_STORE_LOCKED`, `CAMERA_PERMISSION_DENIED`       |
-| **Доменная (Domain)** | Нарушение бизнес-инвариантов, невалидные входные данные, истёкший срок действия QR, превышение лимита попыток PIN | `Domain` (use-case, валидаторы, сущности) | `INVALID_SMS_CODE`, `QR_CODE_EXPIRED`, `PIN_ATTEMPTS_EXCEEDED`, `SESSION_REVOKED` |
-| **Презентационная (UI/Presentation)** | Ошибки валидации формы, конфликты состояний интерфейса, невозможность отобразить данные | `App` (презентеры, компоненты, guards) | `FORM_REQUIRED_FIELD`, `NAVIGATION_STACK_OVERFLOW`, `RENDER_QR_FAILED`            |
+| **Доменная (Domain)** | Нарушение бизнес-инвариантов, невалидные входные данные, истёкший срок действия токена, превышение лимита попыток | `Domain` (use-case, валидаторы, сущности) | `INVALID_SMS_CODE`, `TOKEN_EXPIRED`, `PIN_ATTEMPTS_EXCEEDED`, `SESSION_REVOKED` |
+| **Презентационная (UI/Presentation)** | Ошибки валидации формы, конфликты состояний интерфейса, невозможность отобразить данные | `App` (презентеры, компоненты, guards) | `FORM_REQUIRED_FIELD`, `NAVIGATION_STACK_OVERFLOW`, `RENDER_FAILED`            |
 
 ## Поток обработки ошибок
 
@@ -53,25 +53,25 @@ interface IInfrastructureError extends IAppError {
 
 Пример генерации ошибки в Domain:
 ```typescript
-// domain/qr/use-case/ValidateQRCodeUseCase.ts
-const execute = (port: IValidateQRPort): IValidationResult => {
+// domain/otp/use-case/ValidateTokenUseCase.ts
+const execute = (port: IValidateTokenPort): IValidationResult => {
   const currentTimeValue: number = Date.now();
   const isExpiredValue: boolean = currentTimeValue > port.expiresAt;
 
   if (isExpiredValue) {
     const expirationErrorValue: IDomainError = {
-      name: 'QRCodeExpiredError',
-      message: 'QR-код утратил актуальность',
-      code: 'QR_EXPIRED',
+      name: 'TokenExpiredError',
+      message: 'Токен утратил актуальность',
+      code: 'TOKEN_EXPIRED',
       layer: 'domain',
       isRetryable: false,
-      userMessage: 'Код устарел. Запросите новый у посетителя.',
+      userMessage: 'Код устарел. Запросите новый.',
       violationRule: 'timestamp_validation',
     };
     throw expirationErrorValue;
   }
 
-  return { isValid: true, visitorStatus: port.visitorStatus };
+  return { isValid: true };
 };
 ```
 
@@ -89,7 +89,7 @@ const execute = (port: IValidateQRPort): IValidationResult => {
 ### Рекомендации по UX состояний
 - **Skeleton vs Spinner:** Skeleton используется для структурных данных (списки, профили), Spinner — для атомарных действий (кнопка подтверждения, модальное окно).
 - **Блокировка интерфейса:** При `isPending === true` все интерактивные элементы сценария должны получать `disabled`. Это предотвращает двойные отправки и гонки состояний.
-- **Оптимистичные обновления:** Применяются только для некритичных действий (лайки, черновики). Для авторизации, платежей и валидации пропусков используется только пессимистичный подход (ожидание ответа сервера).
+- **Оптимистичные обновления:** Применяются только для некритичных действий (лайки, черновики). Для авторизации, платежей и критичных бизнес-операций используется только пессимистичный подход (ожидание ответа сервера).
 
 ## Глобальная обработка и восстановление
 
@@ -129,7 +129,7 @@ class ErrorBoundary extends React.Component<IErrorBoundaryProps, IErrorBoundaryS
 | Тип запроса | Retry Policy | Обоснование |
 |-------------|--------------|-------------|
 | GET (списки, профиль) | `retry: 2`, `retryDelay: exponential` | Временные сбои сети, безопасно повторять |
-| POST (авторизация, генерация QR) | `retry: 0` или `retry: 1` (только 5xx) | Идемпотентность не гарантирована, риск дублей |
+| POST (авторизация, создание ресурса) | `retry: 0` или `retry: 1` (только 5xx) | Идемпотентность не гарантирована, риск дублей |
 | WebSocket / Polling | Встроенный reconnect с backoff | Долгосрочное соединение, требует восстановления |
 
 ### Fallback и деградация
