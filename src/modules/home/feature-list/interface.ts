@@ -2,8 +2,10 @@ import type {ReactNode} from "react";
 
 interface FeatureItem {
     title: string;
-    src: string
+    icon: string;
+    accentColor: string;
+    bgColor: string;
     description: ReactNode;
 }
 
-export type {FeatureItem}
+export type {FeatureItem};

@@ -1,37 +1,41 @@
 import type {ReactNode} from 'react';
-import clsx from 'clsx';
-import Heading from '@theme/Heading';
 import styles from './styles.module.css';
 import {FeatureItem} from "./interface";
 import {FeatureList} from "./const";
 
-function Feature({title, src, description}: FeatureItem) {
-    return (
-        <div className={clsx('col col--4')}>
-            <div className="text--center">
-                <img alt='' src={src} className={styles.featureSvg} role="img"/>
+interface FeatureCardProps extends FeatureItem {}
+
+const FeatureCard = ({title, icon, accentColor, bgColor, description}: FeatureCardProps): ReactNode => (
+    <div className={styles.card}>
+        <div
+            className={styles.iconWrap}
+            style={{background: bgColor, border: `1px solid ${accentColor}22`}}
+        >
+            {icon}
+        </div>
+        <h3 className={styles.cardTitle}>{title}</h3>
+        <p className={styles.cardDescription}>{description}</p>
+    </div>
+);
+
+const HomepageFeatures = (): ReactNode => (
+    <section className={styles.section}>
+        <div className="container">
+            <div className={styles.sectionHeader}>
+                <span className={styles.sectionLabel}>Принципы</span>
+                <h2 className={styles.sectionTitle}>Почему чистая архитектура</h2>
+                <p className={styles.sectionSubtitle}>
+                    Шесть фундаментальных свойств, которые делают систему предсказуемой,
+                    тестируемой и устойчивой к изменениям.
+                </p>
             </div>
-            <div className="text--center padding-horiz--md">
-                <Heading as="h3">{title}</Heading>
-                <p>{description}</p>
+            <div className={styles.grid}>
+                {FeatureList.map((item, idx) => (
+                    <FeatureCard key={idx} {...item} />
+                ))}
             </div>
         </div>
-    );
-}
+    </section>
+);
 
-function HomepageFeatures(): ReactNode {
-    return (
-        <section className={styles.features}>
-            <div className="container">
-                <div className="row">
-                    {FeatureList.map((props, idx) => (
-                        <Feature key={idx} {...props} />
-                    ))}
-                </div>
-            </div>
-        </section>
-    );
-}
-
-
-export default HomepageFeatures
+export default HomepageFeatures;

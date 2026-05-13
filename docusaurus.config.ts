@@ -97,19 +97,40 @@ const config: Config = {
             ],
         },
         footer: {
-            style: 'dark',
+            style: 'light',
             links: [
                 {
-                    title: 'Документация',
+                    title: 'Основы',
                     items: [
-                        { label: 'Введение', to: '/docs/intro' },
-                        { label: 'Архитектура', to: '/docs/architecture-overview' },
-                        { label: 'Стандарты кода', to: '/docs/coding-standards' },
-                        { label: 'Глоссарий', to: '/docs/glossary' },
+                        {label: 'Введение', to: '/docs/intro'},
+                        {label: 'Обзор архитектуры', to: '/docs/architecture-overview'},
+                        {label: 'Слои архитектуры', to: '/docs/layers'},
+                        {label: 'Стандарты кода', to: '/docs/coding-standards'},
+                        {label: 'Обработка ошибок', to: '/docs/error-handling'},
+                    ],
+                },
+                {
+                    title: 'Примеры',
+                    items: [
+                        {label: 'GET-запрос', to: '/docs/examples/feature-get'},
+                        {label: 'Мутация (POST)', to: '/docs/examples/feature-post'},
+                        {label: 'Polling + таймер', to: '/docs/examples/polling'},
+                        {label: 'Многошаговая форма', to: '/docs/examples/form-validation'},
+                        {label: 'Оффлайн-режим', to: '/docs/examples/offline-mode'},
+                    ],
+                },
+                {
+                    title: 'Сквозные механизмы',
+                    items: [
+                        {label: 'Управление состоянием', to: '/docs/cross-cutting/state-management'},
+                        {label: 'Внедрение зависимостей', to: '/docs/cross-cutting/di'},
+                        {label: 'Навигация', to: '/docs/navigation'},
+                        {label: 'Тестирование', to: '/docs/testing'},
+                        {label: 'Глоссарий', to: '/docs/glossary'},
                     ],
                 },
             ],
-            copyright: `© ${new Date().getFullYear()} Clean Architecture Frontend. Built with Docusaurus.`,
+            copyright: `© ${new Date().getFullYear()} Clean Architecture Frontend`,
         },
         prism: {
             theme: prismThemes.vsLight,

@@ -1,23 +1,258 @@
-/**
- * Any CSS included here will be global. The classic template
- * bundles Infima by default. Infima is a CSS framework designed to
- * work well for content-centric websites.
- */
+/* ============================================================
+   Design System — Clean Architecture Docs
+   ============================================================ */
 
-/* You can override the default Infima variables here. */
+/* === Color Tokens === */
 :root {
-  --ifm-color-primary: #2593c2;
-  --ifm-color-primary-dark: #2593c2;
-  --ifm-color-primary-darker: #2081ab;
-  --ifm-color-primary-darkest: #1e779d;
-  --ifm-color-primary-light: #289bcc;
-  --ifm-color-primary-lighter: #29a1d3;
-  --ifm-color-primary-lightest: #2ba9de;
-  --ifm-code-font-size: 95%;
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --ifm-color-primary: #2563eb;
+  --ifm-color-primary-dark: #1d4ed8;
+  --ifm-color-primary-darker: #1e40af;
+  --ifm-color-primary-darkest: #1e3a8a;
+  --ifm-color-primary-light: #3b82f6;
+  --ifm-color-primary-lighter: #60a5fa;
+  --ifm-color-primary-lightest: #93c5fd;
+
+  --ca-indigo: #6366f1;
+  --ca-cyan: #06b6d4;
+  --ca-emerald: #10b981;
+  --ca-amber: #f59e0b;
+  --ca-violet: #8b5cf6;
+  --ca-rose: #f43f5e;
+
+  --ca-surface-0: #ffffff;
+  --ca-surface-1: #f8fafc;
+  --ca-surface-2: #f1f5f9;
+  --ca-border: #e2e8f0;
+  --ca-text: #0f172a;
+  --ca-text-muted: #64748b;
+  --ca-text-subtle: #94a3b8;
+
+  --ca-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --ca-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --ca-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --ca-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.1), 0 4px 16px rgba(0, 0, 0, 0.05);
+  --ca-shadow-blue: 0 8px 32px rgba(37, 99, 235, 0.2);
+
+  --ca-radius-sm: 8px;
+  --ca-radius-md: 12px;
+  --ca-radius-lg: 16px;
+  --ca-radius-xl: 24px;
+
+  --ifm-code-font-size: 90%;
+  --ifm-font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif;
+  --docusaurus-highlighted-code-line-bg: rgba(37, 99, 235, 0.08);
 }
 
-/* For readability concerns, you should choose a lighter palette in dark mode. */
 [data-theme='dark'] {
-  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+  --ifm-color-primary: #60a5fa;
+  --ifm-color-primary-dark: #3b82f6;
+  --ifm-color-primary-darker: #2563eb;
+  --ifm-color-primary-darkest: #1d4ed8;
+  --ifm-color-primary-light: #93c5fd;
+  --ifm-color-primary-lighter: #bfdbfe;
+  --ifm-color-primary-lightest: #dbeafe;
+
+  --ca-surface-0: #0f172a;
+  --ca-surface-1: #1e293b;
+  --ca-surface-2: #334155;
+  --ca-border: #334155;
+  --ca-text: #f1f5f9;
+  --ca-text-muted: #94a3b8;
+  --ca-text-subtle: #64748b;
+
+  --ca-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --ca-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --ca-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.4);
+  --ca-shadow-blue: 0 8px 32px rgba(96, 165, 250, 0.15);
+
+  --docusaurus-highlighted-code-line-bg: rgba(96, 165, 250, 0.1);
+}
+
+/* === Global Reset & Base === */
+html {
+  scroll-behavior: smooth;
+}
+
+/* === Navbar === */
+.navbar {
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--ca-border);
+  box-shadow: none;
+}
+
+.navbar__title {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* === Sidebar === */
+.theme-doc-sidebar-container {
+  border-right: 1px solid var(--ca-border) !important;
+}
+
+.theme-doc-sidebar-menu .menu__link--active {
+  font-weight: 600;
+}
+
+/* === Markdown Content === */
+.markdown {
+  --ifm-heading-font-weight: 700;
+}
+
+.markdown h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.markdown h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-top: 2.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--ca-border);
+}
+
+.markdown h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin-top: 1.75rem;
+}
+
+/* === Code Blocks === */
+.prism-code {
+  border-radius: var(--ca-radius-md) !important;
+  font-size: 0.875rem !important;
+  line-height: 1.65 !important;
+}
+
+.codeBlockContainer_node_modules-\@docusaurus-theme-classic-lib-theme-CodeBlock-Container-styles-module {
+  border-radius: var(--ca-radius-md);
+  box-shadow: var(--ca-shadow-md);
+}
+
+code {
+  border-radius: 6px;
+  font-size: 0.875em;
+  padding: 0.15em 0.4em;
+}
+
+/* === Tables === */
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: var(--ca-radius-md);
+  overflow: hidden;
+  box-shadow: var(--ca-shadow-sm);
+  border: 1px solid var(--ca-border);
+  font-size: 0.9rem;
+}
+
+thead tr {
+  background: var(--ca-surface-2) !important;
+}
+
+th {
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+td, th {
+  padding: 10px 16px !important;
+}
+
+tr:last-child td {
+  border-bottom: none;
+}
+
+/* === Admonitions === */
+.alert {
+  border-radius: var(--ca-radius-md);
+  border-width: 1px;
+}
+
+/* === Pagination === */
+.pagination-nav__link {
+  border-radius: var(--ca-radius-md);
+  border: 1px solid var(--ca-border);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.pagination-nav__link:hover {
+  border-color: var(--ifm-color-primary);
+  box-shadow: var(--ca-shadow-blue);
+}
+
+/* === Footer — light mode === */
+.footer {
+  background: #f1f5f9;
+  border-top: 1px solid #e2e8f0;
+  color: #334155;
+}
+
+.footer__title {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  color: #64748b;
+  margin-bottom: 0.75rem;
+}
+
+.footer__link-item {
+  font-size: 0.875rem;
+  color: #475569;
+  transition: color 0.15s;
+}
+
+.footer__link-item:hover {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+}
+
+.footer__copyright {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 2rem;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 1.5rem;
+}
+
+/* === Footer — dark mode === */
+[data-theme='dark'] .footer {
+  background: #0f172a;
+  border-top: 1px solid #1e293b;
+  color: #94a3b8;
+}
+
+[data-theme='dark'] .footer__title {
+  color: #475569;
+}
+
+[data-theme='dark'] .footer__link-item {
+  color: #64748b;
+}
+
+[data-theme='dark'] .footer__link-item:hover {
+  color: var(--ifm-color-primary);
+}
+
+[data-theme='dark'] .footer__copyright {
+  color: #334155;
+  border-top-color: #1e293b;
+}
+
+/* === Scroll to top === */
+.theme-back-to-top-button {
+  border-radius: 50%;
+  box-shadow: var(--ca-shadow-lg);
+}
+
+/* === Breadcrumbs === */
+.breadcrumbs__item--active .breadcrumbs__link {
+  color: var(--ifm-color-primary);
+  font-weight: 600;
 }
