@@ -256,3 +256,77 @@ tr:last-child td {
   color: var(--ifm-color-primary);
   font-weight: 600;
 }
+
+/* ============================================================
+   Global responsive — docs pages
+   ============================================================ */
+
+/* ── Tablet ── */
+@media (max-width: 996px) {
+  .markdown h1 { font-size: 1.75rem; }
+  .markdown h2 { font-size: 1.3rem; }
+  .markdown h3 { font-size: 1.05rem; }
+
+  /* Code blocks: allow horizontal scroll without breaking layout */
+  .prism-code {
+    font-size: 0.82rem !important;
+  }
+}
+
+/* ── Large phone ── */
+@media (max-width: 640px) {
+  .markdown h1 { font-size: 1.55rem; }
+  .markdown h2 { font-size: 1.2rem; margin-top: 2rem; }
+
+  /* Tables: scroll horizontally rather than overflow */
+  .markdown table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 0;
+    box-shadow: none;
+    border: 1px solid var(--ca-border);
+  }
+
+  td, th { padding: 8px 12px !important; font-size: 0.85rem; }
+
+  /* Code: smaller on phones */
+  .prism-code { font-size: 0.78rem !important; }
+  code { font-size: 0.8em; }
+
+  /* Pagination */
+  .pagination-nav {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .pagination-nav__link { width: 100%; }
+
+  /* Footer: single-column columns on small screens */
+  .footer__links { flex-direction: column; gap: 2rem; }
+  .footer__col   { min-width: 0; }
+}
+
+/* ── Small phone ── */
+@media (max-width: 420px) {
+  .markdown h1 { font-size: 1.4rem; }
+  .markdown h2 { font-size: 1.1rem; }
+  .prism-code  { font-size: 0.74rem !important; }
+
+  /* Navbar title: shorten to avoid overflow */
+  .navbar__title { font-size: 0.95rem; }
+}
+
+/* ── Touch: nicer tap targets ── */
+@media (hover: none) {
+  .menu__link {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .pagination-nav__link:hover {
+    box-shadow: none;
+    border-color: var(--ca-border);
+  }
+  .pagination-nav__link:active {
+    background: var(--ca-surface-2);
+  }
+}

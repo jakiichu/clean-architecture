@@ -73,8 +73,10 @@ export const ArchBackground = (): ReactNode => {
 
         // ── Initialise dots with distributed x-positions ──
         // Split canvas into columns so nodes start well spread out
-        const cols = Math.ceil(NODE_COUNT / 3); // nodes per layer
-        for (let i = 0; i < NODE_COUNT; i++) {
+        // Fewer nodes on small screens — better perf, still looks good
+        const count = W() < 640 ? 21 : W() < 996 ? 33 : NODE_COUNT;
+        const cols = Math.ceil(count / 3);
+        for (let i = 0; i < count; i++) {
             const ci = (i % 3) as 0 | 1 | 2;
             const col = Math.floor(i / 3);               // which column slot
             const slotW = W() / cols;
