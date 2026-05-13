@@ -101,5 +101,5 @@ sidebar_position: 8
 
 ## Дальнейшее чтение
 - [Пример реализации фичи (Mutation)](../examples/feature-post.md) — управление сайд-эффектами и инвалидацией кэша
-- [Интеграция с нативными модулями](../native-integration.md) — работа с Persistent/Device State и аппаратными хранилищами
+- [Интеграция с нативными модулями](../examples/native-integration.md) — работа с Persistent/Device State и аппаратными хранилищами
 - [Стандарты кода](../coding-standards.md) — правила типизации DTO, Port и организации экспортов

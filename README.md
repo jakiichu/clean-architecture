@@ -1,41 +1,97 @@
-# Website
+# Clean Architecture Frontend — Документация
 
-This website is built using [Docusaurus](https://docusaurus.io/), a modern static website generator.
+Сайт-документация по архитектурной методологии для фронтенд и мобильных проектов (React, React Native / Expo). Построен на [Docusaurus](https://docusaurus.io/).
 
-## Installation
+## О проекте
 
-```bash
-yarn
+Документация фиксирует единый подход к проектированию на основе чистой архитектуры:
+
+- **Трёхслойная модель** `App → Domain ← Data` с инверсией зависимостей
+- **Управление состоянием** — классификация UI / Server / Business / Persistent State и правила их размещения
+- **Обработка ошибок** — типизированные интерфейсы ошибок по слоям, retry-политики, Error Boundary
+- **Нативные модули** — паттерн Адаптер для SecureStore, Keychain, биометрии, камеры
+- **Стандарты кода** — правила именования, типизации DTO, организации экспортов
+- **Практические примеры** — пошаговая реализация GET-запроса и мутации (POST)
+
+## Структура документации
+
+```
+docs/
+├── intro.md                        # Введение и мотивация
+├── architecture-overview.md        # Обзор архитектуры
+├── layers.md                       # Слои: App, Domain, Data
+├── coding-standards.md             # Стандарты написания кода
+├── error-handling.md               # Обработка ошибок и загрузки
+├── glossary.md                     # Глоссарий терминов
+├── cross-cutting/
+│   ├── state-management.md         # Управление состоянием и границы слоёв
+│   └── index.md
+└── examples/
+    ├── feature-get.md              # Пример: GET-запрос (Query)
+    ├── feature-post.md             # Пример: мутация (POST)
+    ├── native-integration.md       # Пример: нативные модули
+    └── index.md
 ```
 
-## Local Development
+## Быстрый старт
+
+### Требования
+
+- Node.js >= 20
+
+### Установка
 
 ```bash
-yarn start
+npm install
 ```
 
-This command starts a local development server and opens up a browser window. Most changes are reflected live without having to restart the server.
-
-## Build
+### Локальная разработка
 
 ```bash
-yarn build
+npm start
 ```
 
-This command generates static content into the `build` directory and can be served using any static contents hosting service.
+Открывает браузер на `http://localhost:3000`. Изменения в `.md`-файлах применяются мгновенно.
 
-## Deployment
-
-Using SSH:
+### Сборка
 
 ```bash
-USE_SSH=true yarn deploy
+npm run build
 ```
 
-Not using SSH:
+Генерирует статический сайт в папку `build/`.
+
+### Предпросмотр сборки
 
 ```bash
-GIT_USER=<Your GitHub username> yarn deploy
+npm run serve
 ```
 
-If you are using GitHub pages for hosting, this command is a convenient way to build the website and push to the `gh-pages` branch.
+### Очистка кэша
+
+```bash
+npm run clear
+```
+
+## Деплой
+
+#### GitHub Pages (SSH)
+
+```bash
+USE_SSH=true npm run deploy
+```
+
+#### GitHub Pages (HTTPS)
+
+```bash
+GIT_USER=<GitHub username> npm run deploy
+```
+
+## Технологии
+
+| Инструмент | Версия |
+|---|---|
+| Docusaurus | 3.9.2 |
+| React | 19 |
+| TypeScript | ~5.6 |
+| Node.js | >= 20 |

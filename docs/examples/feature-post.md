@@ -237,5 +237,5 @@ export function SmsVerificationScreen() {
 ## Дальнейшее чтение
 
 - [Управление состоянием](../cross-cutting/state-management) — как правильно хранить сессию после успешного входа
-- [Безопасность и нативные модули](../cross-cutting/native-integration.md) — работа с SecureStore и биометрией
+- [Безопасность и нативные модули](./native-integration.md) — работа с SecureStore и биометрией
 - [Стандарты кода](../coding-standards.md)

@@ -165,6 +165,5 @@ class ErrorBoundary extends React.Component<IErrorBoundaryProps, IErrorBoundaryS
 
 ## Дальнейшее чтение
 - [Управление состоянием](./cross-cutting/state-management) — разделение UI State и Server State при обработке сбоев
-- [Безопасность и криптография](./security-cryptography.md) — обработка ошибок шифрования и сброса сессий
 - [Пример реализации фичи (Mutation)](./examples/feature-post.md) — паттерны `onError` и `onSuccess` в хуках
 - [Стандарты кода](./coding-standards.md) — правила типизации ошибок и запрета на `any` в catch-блоках

@@ -41,7 +41,6 @@ const config: Config = {
     projectName: 'clean-architecture-docs',
 
     onBrokenLinks: 'throw',
-    onBrokenMarkdownLinks: 'warn',
 
     i18n: {
         defaultLocale: 'ru',
@@ -125,6 +124,9 @@ const config: Config = {
 
     markdown: {
         mermaid: true,
+        hooks: {
+            onBrokenMarkdownLinks: 'warn',
+        },
     },
 };
 
