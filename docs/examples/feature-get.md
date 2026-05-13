@@ -1,419 +1,238 @@
 ---
-title: Пример реализации фичи(get запрос)
-sidebar_position: 1
+title: Пример реализации фичи (GET-запрос)
+sidebar_position: 4
 ---
 
-# Теоретическая часть
+# Пример реализации фичи: получение данных (GET)
 
-Перед тем как перейти к реализации, важно зафиксировать архитектурные принципы, на которых построен данный пример.
+В данном разделе разобран пошаговый подход к созданию функциональной единицы, отвечающей за получение данных с сервера. Пример демонстрирует, как архитектурные принципы Clean Architecture применяются на практике: от описания контрактов в `Domain` до интеграции с UI-слоем в `App`.
 
----
+Материал носит рекомендательный характер и не привязан к конкретному фреймворку. В примерах используются общие паттерны, которые легко адаптировать под React, Vue, Angular или мобильные платформы.
 
-### Почему разработка начинается с `domain`
+## Почему разработка начинается с Domain
 
-Слой `domain` является центральным элементом архитектуры.  
-Именно здесь описываются:
+Слой `Domain` является архитектурным ядром. Именно здесь фиксируется «язык» системы: сущности, сценарии и правила взаимодействия. Начало разработки с `Domain` гарантирует:
 
-- бизнес-сущности;
-- бизнес-сценарии (use-case);
-- контракты взаимодействия между слоями.
+- Бизнес-логика не подстраивается под возможности UI или особенности HTTP-клиента
+- Контракты становятся точкой согласования между фронтенд, бэкенд и мобильными командами
+- Инфраструктурные детали (кэширование, ретраи, маппинг ответов) изолируются и заменяются без влияния на ядро
+- Use-case покрываются unit-тестами в изоляции от сети и браузера
 
-Разработка всегда начинается с `domain`, потому что:
+## Контракты важнее реализации
 
-- UI не должен диктовать бизнес-логику;
-- инфраструктура (`data`) — это деталь реализации;
-- типы и контракты формируют «язык» системы.
+Перед написанием кода фиксируются интерфейсы, которые будут связывать слои:
 
----
+1. **DTO** — формат данных, возвращаемый бизнес-сценарием
+2. **Port** — входные параметры use-case
+3. **Repository Interface** — абстракция доступа к источнику данных
+4. **Use-case Interface** — контракт бизнес-сценария
 
-### Контракты важнее реализации
+Только после утверждения контрактов переходят к реализации. Это позволяет параллелизовать работу: бэкенд адаптирует ответы под DTO, фронтенд верстает интерфейсы под Port, а тестировщики готовят сценарии под Use-case.
 
-В примере сначала создаются:
+## Пошаговая реализация
 
-- **DTO** — формат данных, возвращаемых бизнес-сценарием;
-- **Port** — входные параметры use-case;
-- **Repository interface** — абстракция доступа к данным;
-- **Use-case interface** — контракт бизнес-сценария.
+### Шаг 1. Описание контрактов в Domain
 
-Только после этого появляются:
+Контракты размещаются в `domain/{feature}/interface/`. Они не содержат логики, только типы и сигнатуры.
 
-- конкретные use-case;
-- репозитории;
-- React-код.
-
-Это позволяет:
-
-- легко менять источник данных;
-- тестировать use-case изолированно;
-- не связывать бизнес-логику с UI или HTTP.
-
----
-
-### Почему используется пагинация через `common`
-
-Пагинация — это **сквозная концепция**, которая может использоваться в разных модулях (users, products, orders и т.д.).
-
-Поэтому:
-
-- `IBasePaginationPort`
-- `IBaseGetPaginationDto`
-
-Вынесены в `domain/common`.
-
-Такой подход:
-
-- предотвращает дублирование;
-- формирует единый стандарт API;
-- упрощает масштабирование проекта.
-
----
-
-### Роль use-case
-
-Use-case — это **чёрный ящик бизнес-логики**:
-
-- принимает входные данные через порт;
-- работает только через интерфейсы;
-- возвращает DTO;
-- не знает ничего о React, HTTP или TanStack Query.
-
-В данном примере `GetAllUsersUseCase`:
-
-- не содержит логики пагинации UI;
-- не знает, откуда приходят данные;
-- просто координирует бизнес-сценарий.
-
----
-
-### Почему `BaseUsersUseCase`
-
-`BaseUsersUseCase` — это технический базовый класс, который:
-
-- инкапсулирует работу с репозиторием;
-- уменьшает дублирование кода;
-- упрощает добавление новых use-case.
-
-При появлении новых сценариев:
-
-- `GetUserById`
-- `CreateUser`
-- `DeleteUser`
-
-Они смогут использовать тот же базовый класс.
-
----
-
-### Разделение `request` и `presenter` в App-слое
-
-В слое `app` логика разделена на два уровня:
-
-#### `request`
-
-- отвечает за асинхронные операции;
-- использует **TanStack Query**;
-- знает про кэш, статусы, рефетчи;
-- вызывает use-case.
-
-#### `presenter`
-
-- агрегирует данные;
-- управляет формами и состоянием UI;
-- подготавливает данные для компонентов;
-- не содержит JSX.
-
-Такое разделение:
-
-- упрощает тестирование;
-- делает код предсказуемым;
-- снижает связанность компонентов.
-
----
-
-### Почему TanStack Query используется только в `app`
-
-TanStack Query — это UI-инструмент.
-
-Он:
-
-- управляет состоянием загрузки;
-- кеширует данные;
-- синхронизирует UI с сервером.
-
----
-
-# Практическая часть
-
-## 1. Типизация данных
-
-В базе данных у пользователя есть поля: `id`, `name`, `email`, `avatar_url`, `password`.  
-Пароль не должен приходить с API, поэтому типизируем только первые 4 поля.
-
-**Файл:** `src/domain/user/interface/dto/index.ts`
-
-```ts
-interface IBaseUserDto {
-    id: string
-    name: string
-    email: string
-    avatar_url: string
+```typescript
+// domain/users/interface/dto.ts
+interface IUserDto {
+  id: string;
+  fullName: string;
+  email: string;
+  avatarUrl: string | null;
 }
 
-type IUserArrayDto = Array<IBaseUserDto>
-
-type IGetAllUserDto = IBaseGetPaginationDto<IUserArrayDto>
-
-export type {IBaseUserDto, IGetAllUserDto}
-
-```
-
----
-
-## 2. Контракт порта для пагинации
-
-Простая пагинация, вынесенная в common для переиспользования в других модулях.
-
-Файл: `src/domain/user/interface/port/index.ts`
-
-```ts
-import type {IBasePaginationPort} from '@/domain/common/interface'
-
-type IGetAllUserPort = IBasePaginationPort
-
-export type {IGetAllUserPort}
-```
-
-Файл: `src/domain/common/interface/index.ts`
-
-```ts
-interface IBaseGetPaginationDto<T> {
-    count: number
-    data: T
-    page: number
+interface IUsersListDto {
+  items: IUserDto[];
+  total: number;
+  page: number;
+  limit: number;
 }
+```
 
-interface IBasePaginationPort {
-    page: number
-    limit: number
+```typescript
+// domain/users/interface/port.ts
+interface IGetUsersPort {
+  page: number;
+  limit: number;
+  searchQuery?: string;
 }
-
-export type {IBaseGetPaginationDto, IBasePaginationPort}
 ```
 
-Контракты вынесены в common, чтобы их можно было использовать повторно.
-
----
-
-## 3. Контракт репозитория
-
-Файл: `src/domain/user/interface/repository/index.ts`
-
-``` 
-import type { IGetAllUserDto } from '../dto'
-import type { IGetAllUserPort } from '../port'
-
-interface IUserRepository {
-    getAll: (port: IGetAllUserPort) => Promise<IGetAllUserDto>
+```typescript
+// domain/users/interface/repository.ts
+interface IUsersRepository {
+  getUsersList(port: IGetUsersPort): Promise<IUsersListDto>;
 }
-
-export type { IUserRepository }
 ```
 
----
-
-## 4. Контракт use-case
-
-Файл: `src/domain/user/interface/use-case/index.ts`
-
-```
-import type { IUseCase } from '@/domain/common/http/use-case'
-import type { IGetAllUserDto } from '../dto'
-import type { IGetAllUserPort } from '../port'
-
-type IGetAllUsersUseCase = IUseCase<IGetAllUserPort, IGetAllUserDto>
-
-export type { IGetAllUsersUseCase }
-
-```
-
-Файл: `src/domain/common/http/use-case/index.ts`
-
-```
-interface IUseCase<TPort, TResponse> {
-    execute: (port: TPort) => Promise<TResponse>
+```typescript
+// domain/users/interface/use-case.ts
+interface IGetUsersUseCase {
+  execute(port: IGetUsersPort): Promise<IUsersListDto>;
 }
-
-export type { IUseCase }
 ```
 
-Для абстракции используем дженерики.
+### Шаг 2. Реализация бизнес-сценария (Use-case)
 
----
+Use-case координирует вызов репозитория, применяет доменные правила и возвращает результат. Не знает о HTTP, кэше или UI.
 
-## 5. Реализация use-case
+```typescript
+// domain/users/use-case/get-users.ts
+import type { IGetUsersUseCase } from '../interface/use-case';
+import type { IGetUsersPort } from '../interface/port';
+import type { IUsersListDto } from '../interface/dto';
+import type { IUsersRepository } from '../interface/repository';
 
-Файл: `src/domain/user/use-case/get-all/index.ts`
+class GetUsersUseCase implements IGetUsersUseCase {
+  constructor(private readonly usersRepository: IUsersRepository) {}
 
-```
-import type { IGetAllUserDto } from '@/domain/user/interface/dto'
-
-import type { IGetAllUsersUseCase } from '@/domain/user/interface/use-case'
-
-import type { IGetAllUserPort } from '@/domain/user/interface/port'
-
-import { BaseUsersUseCase } from '@/domain/user/common/use-case'
-
-class GetAllUsersUseCase extends BaseUsersUseCase implements IGetAllUsersUseCase {
-    public async execute(port: IGetAllUserPort): Promise<IGetAllUserDto> {
-        return this._repository.getAll(port)
-    }
-}
-
-export { GetAllUsersUseCase }
-
-```
-
-Файл: `src/domain/user/common/use-case/index.ts`
-
-```
-import type { IUserRepository } from '@/domain/user/interface/repository'
-
-class BaseUsersUseCase {
-    protected readonly _repository: IUserRepository
-
-    constructor(UsersRepository: IUserRepository) {
-        this._repository = UsersRepository
-    }
-}
-
-export { BaseUsersUseCase }
-```
-
-BaseUsersUseCase уменьшает дублирование кода и позволяет переиспользовать репозиторий для других use-case.
-
----
-
-## 6. Слой Data (FAKE API)
-
-Файл: `src/data/repository/user/index.ts`
-
-``` 
-import type { IBaseHttpService } from '@/data/repository/common'
-
-import type { IGetAllUserDto } from '@/domain/user/interface/dto'
-import type { IUserRepository } from '@/domain/user/interface/repository'
-import type { IGetAllUserPort } from '@/domain/user/interface/port'
-
-import { BaseRepository } from '@/data/repository/common'
-
-class UserRepository extends BaseRepository implements IUserRepository {
-    constructor(httpService: IBaseHttpService) {
-        super(httpService)
+  async execute(port: IGetUsersPort): Promise<IUsersListDto> {
+    // Доменная валидация входных параметров
+    if (port.page < 0 || port.limit <= 0) {
+      throw new Error('Invalid pagination parameters');
     }
 
-    async getAll({ page, limit }: IGetAllUserPort): Promise<IGetAllUserDto> {
-        const createArray = times(random(TEN, HUNDRED))
-
-        return new Promise((resolve) => {
-            resolve({
-                count: createArray.length,
-                data: createArray
-                    .map((_, index) => ({
-                        id: index.toString(),
-                        name: `User ${index}`,
-                        email: `text@mail.com${index}`,
-                        avatar_url: '',
-                    }))
-                    .slice(limit * page, limit * page + limit),
-                page,
-            })
-        })
-    }
+    // Делегирование инфраструктуре
+    return this.usersRepository.getUsersList(port);
+  }
 }
 
-export { UserRepository }
+export { GetUsersUseCase };
 ```
 
-Файл: `src/data/singleton/index.ts`
+### Шаг 3. Инфраструктурная реализация (Data)
 
-``` 
-import { HTTP_APP_SERVICE } from '@/data/repository/common'
-import { UserRepository } from '@/data/repository/user'
+Слой `Data` реализует контракты `Domain`. Здесь происходит работа с сетью, маппинг ответов, обработка ошибок и ретраи.
 
-const USER_REPOSITORY = new UserRepository(HTTP_APP_SERVICE)
+```typescript
+// data/repositories/users/users-repository.ts
+import type { IUsersRepository } from '../../../domain/users/interface/repository';
+import type { IGetUsersPort } from '../../../domain/users/interface/port';
+import type { IUsersListDto } from '../../../domain/users/interface/dto';
 
-export { USER_REPOSITORY }
-```
+class UsersRepository implements IUsersRepository {
+  constructor(private readonly httpClient: HttpClient) {}
 
----
+  async getUsersList(port: IGetUsersPort): Promise<IUsersListDto> {
+    const response = await this.httpClient.get('/api/v1/users', {
+      params: { page: port.page, limit: port.limit, q: port.searchQuery },
+    });
 
-## 7. Слой App (TanStack Query)
-
-Файл: `src/app/modules/user/case/table/case/request/index.ts`
-
-``` 
-import { useQuery } from '@tanstack/react-query'
-
-import { EQueryKey } from '@/domain/common/query/enum/query'
-
-import type { IGetAllUserDto } from '@/domain/user/interface/dto'
-
-import type { IGetAllUserOptions } from '../interface'
-
-import type { IGetAllUserPort } from '@/domain/user/interface/port'
-
-import { GetAllUsersUseCase } from '@/domain/user/use-case/get-all'
-import { USER_REPOSITORY } from '@/data/singleton'
-
-const useCase = new GetAllUsersUseCase(USER_REPOSITORY)
-
-const useGetAllUserRequest = (port: IGetAllUserPort, options?: IGetAllUserOptions) => {
-    const callback = async (): Promise<IGetAllUserDto> => {
-        return useCase.execute(port)
-    }
-    return useQuery({ queryFn: callback, queryKey: [EQueryKey.GET_ALL_USER, port], ...options })
-}
-
-export { useGetAllUserRequest }
-
-```
-
----
-
-## 8. Presenter
-
-Файл: `src/app/modules/user/case/table/case/presenter/index.ts`
-
-```
-import { useStore } from '@tanstack/react-form'
-
-import { useAppForm } from '@/app/tools/provider/tanstack-form'
-
-import { useGetAllUserRequest } from '../request'
-
-import type { IGetAllUserOptions } from '../interface'
-import type { IGetAllUserDto } from '@/domain/user/interface/dto'
-
-const initialDataValue: IGetAllUserDto = { page: 0, data: [], count: 0 }
-
-const useGetAllUserPresenter = (options?: IGetAllUserOptions) => {
-    const form = useAppForm({
-        defaultValues: {
-            pagination: {
-                page: 0,
-                limit: 10,
-            },
-        },
-    })
-
-    const { pagination } = useStore(form.store, (state) => state.values)
-
-    const { data = initialDataValue, ...props } = useGetAllUserRequest(pagination, options)
+    // Маппинг внешнего ответа в доменный DTO
     return {
-        data,
-        form,
-        ...props,
-    }
+      items: response.data.items.map((item: any) => ({
+        id: item.id,
+        fullName: `${item.first_name} ${item.last_name}`,
+        email: item.email,
+        avatarUrl: item.avatar_url || null,
+      })),
+      total: response.data.total_count,
+      page: response.data.current_page,
+      limit: response.data.per_page,
+    };
+  }
 }
-export { useGetAllUserPresenter }
+
+export { UsersRepository };
+```
+
+### Шаг 4. Интеграция в App-слой
+
+В `App` use-case вызывается через адаптер запросов. Здесь управляется жизненный цикл данных: кэширование, статусы загрузки, пагинация UI, обработка ошибок сети.
+
+```typescript
+// app/modules/users/hooks/use-users-query.ts
+import { useQuery } from '@tanstack/react-query';
+import { GetUsersUseCase } from '../../../domain/users/use-case/get-users';
+import { usersRepositoryInstance } from '../../../data/repositories/users/users-repository';
+
+const useCase = new GetUsersUseCase(usersRepositoryInstance);
+
+export function useUsersQuery(port: IGetUsersPort) {
+  return useQuery({
+    queryKey: ['users', port.page, port.limit, port.searchQuery],
+    queryFn: () => useCase.execute(port),
+    staleTime: 1000 * 60 * 5, // 5 минут
+    retry: 1,
+  });
+}
+```
+
+### Шаг 5. Презентер и UI
+
+Презентер агрегирует данные из запроса, управляет формой поиска/пагинации и подготавливает структуру для компонентов. UI остаётся «глупым» и отвечает только за отрисовку.
+
+```typescript
+// app/modules/users/presenters/users-presenter.ts
+import { useState, useCallback } from 'react';
+import { useUsersQuery } from '../hooks/use-users-query';
+
+export function useUsersPresenter() {
+  const [filters, setFilters] = useState<IGetUsersPort>({ page: 0, limit: 20 });
+  const { data, isLoading, isError, refetch } = useUsersQuery(filters);
+
+  const handleSearch = useCallback((query: string) => {
+    setFilters(prev => ({ ...prev, page: 0, searchQuery: query }));
+  }, []);
+
+  const handlePageChange = useCallback((page: number) => {
+    setFilters(prev => ({ ...prev, page }));
+  }, []);
+
+  return {
+    users: data?.items || [],
+    total: data?.total || 0,
+    isLoading,
+    isError,
+    filters,
+    onSearch: handleSearch,
+    onPageChange: handlePageChange,
+    onRefresh: refetch,
+  };
+}
+```
+
+## Структура файлов фичи
 
 ```
+src/
+├── domain/
+│   └── users/
+│       ├── interface/
+│       │   ├── dto.ts
+│       │   ├── port.ts
+│       │   ├── repository.ts
+│       │   └── use-case.ts
+│       └── use-case/
+│           └── get-users.ts
+├── data/
+│   ── repositories/
+│       └── users/
+│           └── users-repository.ts
+└── app/
+    └── modules/
+        └── users/
+            ├── hooks/
+            │   └── use-users-query.ts
+            ├── presenters/
+            │   └── users-presenter.ts
+            ── components/
+                ├── users-list.tsx
+                └── users-filters.tsx
+```
+
+## Рекомендации по масштабированию
+
+- **Сквозные концепции** (пагинация, сортировка, базовые DTO) выносятся в `domain/common` и переиспользуются между фичами
+- **Базовые классы** для use-case и репозиториев уменьшают дублирование при добавлении новых сценариев (Create, Update, Delete)
+- **Разделение Request и Presenter** упрощает тестирование: хук запроса проверяется на корректность ключей кэша и параметры, презентер — на логику агрегации и управление состоянием UI
+- **Обработка ошибок** происходит на границе слоёв: инфраструктурные ошибки маппятся в пользовательские сообщения в `App`, доменные ошибки выбрасываются из `Domain` и перехватываются презентером
+
+## Дальнейшее чтение
+
+- [Слои архитектуры](../layers.md) — детальное описание зон ответственности
+- [Управление состоянием](../cross-cutting/state-management) — границы клиентского и серверного состояния
+- [Стандарты кода](../coding-standards.md) — правила нейминга, типизации и организации экспортов

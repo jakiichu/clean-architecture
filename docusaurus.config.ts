@@ -6,13 +6,12 @@ import path from 'path';
 // This runs in Node.js - Don't use client-side code here (browser APIs, JSX...)
 
 const config: Config = {
-    title: 'Clean architecture',
-    tagline: 'Архитектурная методология для фронтенд проектов',
+    title: 'Clean Architecture Frontend',
+    tagline: 'Архитектурная методология для фронтенд и мобильных проектов',
     favicon: 'img/logo.png',
 
-    // Future flags, see https://docusaurus.io/docs/api/docusaurus-config#future
     future: {
-        v4: true, // Improve compatibility with the upcoming Docusaurus v4
+        v4: true,
     },
 
     plugins: [
@@ -23,7 +22,10 @@ const config: Config = {
                     return {
                         resolve: {
                             alias: {
-                                '@': path.resolve(__dirname, 'src/')
+                                '@': path.resolve(__dirname, 'src'),
+                                '@domain': path.resolve(__dirname, 'src/domain'),
+                                '@data': path.resolve(__dirname, 'src/data'),
+                                '@app': path.resolve(__dirname, 'src/app'),
                             },
                         },
                     };
@@ -32,26 +34,18 @@ const config: Config = {
         },
     ],
 
-
-    // Set the production url of your site here
-    url: 'https://your-docusaurus-site.example.com',
-    // Set the /<baseUrl>/ pathname under which your site is served
-    // For GitHub pages deployment, it is often '/<projectName>/'
+    url: 'https://your-domain.com',
     baseUrl: '/',
 
-    // GitHub pages deployment config.
-    // If you aren't using GitHub pages, you don't need these.
-    organizationName: 'Dirty architecture', // Usually your GitHub org/user name.
-    projectName: 'Clean architecture', // Usually your repo name.
+    organizationName: 'Dirty architecture',
+    projectName: 'clean-architecture-docs',
 
     onBrokenLinks: 'throw',
+    onBrokenMarkdownLinks: 'warn',
 
-    // Even if you don't use internationalization, you can use this field to set
-    // useful metadata like html lang. For example, if your site is Chinese, you
-    // may want to replace "en" with "zh-Hans".
     i18n: {
-        defaultLocale: 'en',
-        locales: ['en'],
+        defaultLocale: 'ru',
+        locales: ['ru'],
     },
 
     presets: [
@@ -60,26 +54,12 @@ const config: Config = {
             {
                 docs: {
                     sidebarPath: './sidebars.ts',
-                    // Please change this to your repo.
-                    // Remove this to remove the "edit this page" links.
-                    editUrl:
-                        'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
+                    routeBasePath: '/docs',
+                    editUrl: 'https://github.com/your-org/clean-architecture-docs/edit/main/',
+                    showLastUpdateTime: true,
+                    showLastUpdateAuthor: true,
                 },
-                blog: {
-                    showReadingTime: true,
-                    feedOptions: {
-                        type: ['rss', 'atom'],
-                        xslt: true,
-                    },
-                    // Please change this to your repo.
-                    // Remove this to remove the "edit this page" links.
-                    editUrl:
-                        'https://github.com/facebook/docusaurus/tree/main/packages/create-docusaurus/templates/shared/',
-                    // Useful options to enforce blogging best practices
-                    onInlineTags: 'warn',
-                    onInlineAuthors: 'warn',
-                    onUntruncatedBlogPosts: 'warn',
-                },
+                blog: false,
                 theme: {
                     customCss: './src/css/custom.css',
                 },
@@ -87,48 +67,65 @@ const config: Config = {
         ],
     ],
 
-
     themeConfig: {
-        // Replace with your project's social card
-        image: 'img/docusaurus-social-card.jpg',
+        image: 'img/social-card.jpg',
         colorMode: {
+            defaultMode: 'light',
+            disableSwitch: false,
             respectPrefersColorScheme: true,
         },
+        docs: {
+            sidebar: {
+                hideable: true,
+                autoCollapseCategories: true,
+            },
+        },
         navbar: {
-            title: 'Clean architecture',
+            title: 'Clean Architecture',
             logo: {
                 alt: 'Logo',
                 src: 'img/logo.png',
+                href: '/docs/intro',
             },
             items: [
                 {
                     type: 'docSidebar',
                     sidebarId: 'tutorialSidebar',
                     position: 'left',
-                    label: 'Введение',
+                    label: 'Документация',
                     path: '/docs/intro'
-                },
+                }
             ],
         },
         footer: {
+            style: 'dark',
             links: [
                 {
-                    title: 'Docs',
+                    title: 'Документация',
                     items: [
-                        {
-                            label: 'Введение',
-                            to: '/docs/intro',
-                        },
+                        { label: 'Введение', to: '/docs/intro' },
+                        { label: 'Архитектура', to: '/docs/architecture-overview' },
+                        { label: 'Стандарты кода', to: '/docs/coding-standards' },
+                        { label: 'Глоссарий', to: '/docs/glossary' },
                     ],
                 },
             ],
-            copyright: `© "Dirty architecture" ${new Date().getFullYear()}`,
+            copyright: `© ${new Date().getFullYear()} Clean Architecture Frontend. Built with Docusaurus.`,
         },
         prism: {
             theme: prismThemes.vsLight,
             darkTheme: prismThemes.nightOwl,
+            additionalLanguages: ['typescript', 'javascript', 'bash', 'json', 'markdown'],
+        },
+        tableOfContents: {
+            minHeadingLevel: 2,
+            maxHeadingLevel: 4,
         },
     } satisfies Preset.ThemeConfig,
+
+    markdown: {
+        mermaid: true,
+    },
 };
 
 export default config;
