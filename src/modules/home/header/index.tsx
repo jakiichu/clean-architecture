@@ -74,10 +74,10 @@ const HomepageHeader = (): ReactNode => (
                 </p>
 
                 <div className={styles.buttons}>
-                    <Link className={styles.buttonPrimary} to="/docs/intro">
+                    <Link className={styles.buttonPrimary} to="/architecture/intro">
                         Начать читать →
                     </Link>
-                    <Link className={styles.buttonGhost} to="/docs/examples">
+                    <Link className={styles.buttonGhost} to="/architecture/examples">
                         Примеры реализации
                     </Link>
                 </div>

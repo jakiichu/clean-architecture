@@ -33,12 +33,23 @@ const config: Config = {
             };
         },
         [
+            require.resolve('@docusaurus/plugin-content-docs'),
+            {
+                id: 'clean-code',
+                path: 'docs-clean-code',
+                routeBasePath: 'clean-code',
+                sidebarPath: require.resolve('./sidebars-clean-code.ts'),
+                editUrl: 'https://github.com/your-org/clean-architecture-docs/edit/main/',
+                showLastUpdateTime: true,
+                showLastUpdateAuthor: true,
+            },
+        ],
+        [
             require.resolve('@easyops-cn/docusaurus-search-local'),
             {
                 hashed: true,
                 language: ['en', 'ru'],
                 indexBlog: false,
-                docsRouteBasePath: '/docs',
             },
         ],
     ],
@@ -61,8 +72,9 @@ const config: Config = {
             'classic',
             {
                 docs: {
+                    path: 'docs-architecture',
                     sidebarPath: './sidebars.ts',
-                    routeBasePath: '/docs',
+                    routeBasePath: 'architecture',
                     editUrl: 'https://github.com/your-org/clean-architecture-docs/edit/main/',
                     showLastUpdateTime: true,
                     showLastUpdateAuthor: true,
@@ -93,16 +105,23 @@ const config: Config = {
             logo: {
                 alt: 'Logo',
                 src: 'img/logo.png',
-                href: '/docs/intro',
+                href: '/architecture/intro',
             },
             items: [
                 {
                     type: 'docSidebar',
                     sidebarId: 'tutorialSidebar',
                     position: 'left',
-                    label: 'Документация',
-                    path: '/docs/intro'
-                }
+                    label: 'Архитектура',
+                    docsPluginId: 'default',
+                },
+                {
+                    type: 'docSidebar',
+                    sidebarId: 'cleanCodeSidebar',
+                    position: 'left',
+                    label: 'Чистый код',
+                    docsPluginId: 'clean-code',
+                },
             ],
         },
         footer: {
@@ -111,31 +130,31 @@ const config: Config = {
                 {
                     title: 'Основы',
                     items: [
-                        {label: 'Введение', to: '/docs/intro'},
-                        {label: 'Обзор архитектуры', to: '/docs/architecture-overview'},
-                        {label: 'Слои архитектуры', to: '/docs/layers'},
-                        {label: 'Стандарты кода', to: '/docs/coding-standards'},
-                        {label: 'Обработка ошибок', to: '/docs/error-handling'},
+                        {label: 'Введение', to: '/architecture/intro'},
+                        {label: 'Обзор архитектуры', to: '/architecture/architecture-overview'},
+                        {label: 'Слои архитектуры', to: '/architecture/layers'},
+                        {label: 'Стандарты кода', to: '/architecture/coding-standards'},
+                        {label: 'Обработка ошибок', to: '/architecture/error-handling'},
                     ],
                 },
                 {
                     title: 'Примеры',
                     items: [
-                        {label: 'GET-запрос', to: '/docs/examples/feature-get'},
-                        {label: 'Мутация (POST)', to: '/docs/examples/feature-post'},
-                        {label: 'Polling + таймер', to: '/docs/examples/polling'},
-                        {label: 'Многошаговая форма', to: '/docs/examples/form-validation'},
-                        {label: 'Оффлайн-режим', to: '/docs/examples/offline-mode'},
+                        {label: 'GET-запрос', to: '/architecture/examples/feature-get'},
+                        {label: 'Мутация (POST)', to: '/architecture/examples/feature-post'},
+                        {label: 'Polling + таймер', to: '/architecture/examples/polling'},
+                        {label: 'Многошаговая форма', to: '/architecture/examples/form-validation'},
+                        {label: 'Оффлайн-режим', to: '/architecture/examples/offline-mode'},
                     ],
                 },
                 {
                     title: 'Сквозные механизмы',
                     items: [
-                        {label: 'Управление состоянием', to: '/docs/cross-cutting/state-management'},
-                        {label: 'Внедрение зависимостей', to: '/docs/cross-cutting/di'},
-                        {label: 'Навигация', to: '/docs/navigation'},
-                        {label: 'Тестирование', to: '/docs/testing'},
-                        {label: 'Глоссарий', to: '/docs/glossary'},
+                        {label: 'Управление состоянием', to: '/architecture/cross-cutting/state-management'},
+                        {label: 'Внедрение зависимостей', to: '/architecture/cross-cutting/di'},
+                        {label: 'Навигация', to: '/architecture/navigation'},
+                        {label: 'Тестирование', to: '/architecture/testing'},
+                        {label: 'Глоссарий', to: '/architecture/glossary'},
                     ],
                 },
             ],
