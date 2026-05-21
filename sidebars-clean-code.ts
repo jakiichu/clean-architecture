@@ -5,6 +5,12 @@ const sidebars: SidebarsConfig = {
         'intro',
         'naming',
         'functions',
+        'comments',
+        'formatting',
+        'error-handling',
+        'smr',
+        'classes',
+        'testing',
     ],
 };
 
