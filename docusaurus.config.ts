@@ -32,6 +32,15 @@ const config: Config = {
                 },
             };
         },
+        [
+            require.resolve('@easyops-cn/docusaurus-search-local'),
+            {
+                hashed: true,
+                language: ['en', 'ru'],
+                indexBlog: false,
+                docsRouteBasePath: '/docs',
+            },
+        ],
     ],
 
     url: 'https://your-domain.com',
