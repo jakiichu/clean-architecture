@@ -1,6 +1,6 @@
 ---
 title: Пример реализации фичи (Мутация)
-sidebar_position: 5
+sidebar_position: 3
 ---
 
 # Пример реализации фичи: мутация (POST/изменение данных)
@@ -70,7 +70,7 @@ class VerifySmsCodeUseCase implements IVerifySmsCodeUseCase {
   async execute(port: IVerifySmsCodePort): Promise<IAuthSessionDto> {
     // 1. Доменная валидация (например, проверка формата кода)
     if (!/^\d{6}$/.test(port.smsCode)) {
-      throw new Error('Invalid SMS code format');
+      throw new InvalidSmsCodeFormatError();
     }
 
     // 2. Делегирование в репозиторий
@@ -78,7 +78,7 @@ class VerifySmsCodeUseCase implements IVerifySmsCodeUseCase {
 
     // 3. Дополнительная обработка (если требуется по бизнес-логике)
     if (!result.sessionToken) {
-      throw new Error('Session token missing');
+      throw new InvalidSessionResponseError();
     }
 
     return result;
@@ -115,10 +115,11 @@ class AuthRepository implements IAuthRepository {
       };
     } catch (error) {
       // Трансформация сетевых ошибок в доменные или инфраструктурные
-      if (error.response?.status === 401) {
-        throw new Error('Invalid SMS code');
+      if (isHttpError(error) && error.response?.status === 401) {
+        throw new InvalidSmsCodeError();
       }
-      throw new Error('Network error');
+      if (isNetworkError(error)) throw new NetworkUnavailableError();
+      throw new UnexpectedInfrastructureError({ cause: error });
     }
   }
 }
@@ -128,40 +129,26 @@ export { AuthRepository };
 
 ### Шаг 4. Интеграция в App-слой (Мутация)
 
-В слое App мы используем `useMutation` (например, из TanStack Query) для управления жизненным циклом запроса. Здесь же происходят все **побочные эффекты**: навигация, сохранение токенов в SecureStore, показ алертов.
+В слое App `useMutation` управляет presentation-жизненным циклом запроса. Навигация, инвалидация query-cache и показ сообщения остаются в App. Сохранение сессии является частью сценария успешного входа и выполняется use case через порт защищённого хранилища.
 
 ```typescript
 // app/modules/auth/hooks/use-verify-sms-mutation.ts
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { VerifySmsCodeUseCase } from '../../../domain/auth/use-case/verify-sms-code';
-import { authRepositoryInstance } from '../../../data/repositories/auth/auth-repository';
-import { secureStorageAdapter } from '../../../data/storage/secure-storage';
+import { useApplicationDependencies } from '../../../app/providers/ApplicationProvider';
+import { InvalidSmsCodeError, NetworkUnavailableError } from '../../../domain/auth/errors';
 import { router } from 'expo-router';
 
-// Инициализация use-case (в реальном проекте через DI или фабрику)
-const verifySmsCodeUseCase = new VerifySmsCodeUseCase(authRepositoryInstance);
-
 export function useVerifySmsMutation() {
+  const { auth } = useApplicationDependencies();
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (port: IVerifySmsCodePort) => verifySmsCodeUseCase.execute(port),
+    mutationFn: (port: IVerifySmsCodePort) => auth.verifySmsCode.execute(port),
     
-    onSuccess: async (data: IAuthSessionDto) => {
-      // 1. Сохранение данных в нативное хранилище (Side Effect)
-      await secureStorageAdapter.setSessionToken(data.sessionToken);
-      
-      // 2. Инвалидация связанных запросов
+    onSuccess: async () => {
+      // Сессия уже атомарно сохранена use case через Domain-порт.
       await queryClient.invalidateQueries({ queryKey: ['user-profile'] });
-      
-      // 3. Навигация (Side Effect)
       router.replace('/home');
-    },
-    
-    onError: (error: Error) => {
-      // Обработка ошибок UI (показ уведомления)
-      console.error('Verification failed:', error.message);
-      // showAlert('Ошибка входа', error.message);
     }
   });
 
@@ -202,7 +189,12 @@ export function SmsVerificationScreen() {
       />
       
       {mutation.isPending && <Text>Проверка кода...</Text>}
-      {mutation.isError && <Text style={color.red}>{mutation.error.message}</Text>}
+      {mutation.error instanceof InvalidSmsCodeError && (
+        <Text style={color.red}>Код не подошёл. Проверьте его и повторите.</Text>
+      )}
+      {mutation.error instanceof NetworkUnavailableError && (
+        <Text style={color.red}>Нет соединения с сервером.</Text>
+      )}
     </View>
   );
 }
@@ -231,6 +223,6 @@ export function SmsVerificationScreen() {
 
 ## Дальнейшее чтение
 
-- [Управление состоянием](../cross-cutting/state-management) — как правильно хранить сессию после успешного входа
+- [Управление состоянием](../cross-cutting/state-management.md) — как правильно хранить сессию после успешного входа
 - [Безопасность и нативные модули](./native-integration.md) — работа с SecureStore и биометрией
 - [Стандарты кода](../coding-standards.md)

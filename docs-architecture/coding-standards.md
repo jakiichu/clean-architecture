@@ -1,6 +1,6 @@
 ---
 title: Стандарты написания кода
-sidebar_position: 6
+sidebar_position: 5
 ---
 
 # Стандарты написания кода
@@ -26,9 +26,11 @@ sidebar_position: 6
 ## 3. Типизация и интерфейсы
 
 - Все интерфейсы пишутся с префиксом `I`: `IUserProfile`, `IAuthRepository`, `IUseCase`
+- Все `type alias` пишутся с префиксом `T`: `TUserId`, `TAuthResult`, `TRouterPath`. Префикс описывает синтаксическую форму типа, а смысл остаётся в полном имени
 - Запрещено использовать `any`. При невозможности строгой типизации использовать `unknown` с последующим type guard или приведением через `as` только после валидации
 - Пропсы компонентов типизируются через интерфейсы: `IButtonProps extends TouchableOpacityProps`
-- Ответы API и данные из хранилищ маппятся в DTO сразу на границе слоя `data`
+- Ответы API сначала валидируются как внешние DTO, а затем маппятся в Domain Model на границе `Data`. Модели хранения аналогично преобразуются из Persistence Model в Domain Model
+- Классы, enum-подобные константы и runtime-значения не получают `I`/`T`: `NetworkUnavailableError`, `OtpRepository`, `HOTKEY_ACTION`
 
 ## 4. Организация экспортов
 
@@ -50,7 +52,7 @@ sidebar_position: 6
 
 ## 5. Маршрутизация и ключи навигации
 
-- Конструкция `type RouteKeys = keyof typeof ROUTES;` заменяется на `ERouteKeys` для единообразия с enum-паттерном
+- Тип ключей маршрута называется `TRouteKey` или `TRouterPath`: `type TRouterPath = (typeof ROUTER_PATH)[keyof typeof ROUTER_PATH]`
 - Объект с путями объявляется как `const ROUTER_PATH = { ... } as const`
 - Все переходы выполняются через типизированный роутер: `router.replace(ROUTER_PATH.AUTH_PHONE)`
 - Хардкод строк путей в компонентах запрещён
@@ -58,7 +60,7 @@ sidebar_position: 6
 ## 6. Запрещённые практики
 
 - Использование `any` в сигнатурах функций, пропсах, стейте
-- Прямые импорты из `data` в `app` в обход `domain`
+- Прямые импорты из `data` в feature-компоненты, ViewModel и App-хуки. Исключение — Composition Root, где конкретные реализации связываются с Domain-контрактами
 - Бизнес-логика внутри UI-компонентов или хуков презентации
 - Мутация пропсов или стейта напрямую (только через setState/immer)
 - Глобальные переменные вне `config` или `constants`

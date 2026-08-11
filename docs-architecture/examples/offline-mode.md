@@ -1,278 +1,231 @@
 ---
 title: Пример — Оффлайн-режим
-sidebar_position: 8
+sidebar_position: 7
 ---
 
 # Пример: Оффлайн-режим и деградация функциональности
 
-Мобильные приложения должны работать предсказуемо при потере сети. Полная поддержка оффлайна (синхронизация очереди запросов, локальная БД) — сложная задача. Данный пример описывает **управляемую деградацию**: приложение показывает кэшированные данные, блокирует сетевые операции с понятными сообщениями и восстанавливается автоматически при появлении сети.
+Мобильное приложение должно предсказуемо работать при потере сети. Этот пример описывает **управляемую деградацию**: App показывает доступные кэшированные данные, предупреждает об их свежести, временно блокирует явно сетевые действия и корректно обрабатывает фактический отказ запроса.
+
+Предварительный network status улучшает UX, но не гарантирует успех операции: соединение может исчезнуть после проверки. Источником истины остаётся результат Repository.
 
 ## Архитектурные решения
 
-| Задача | Решение | Слой |
-|--------|---------|------|
-| Определение состояния сети | `NetInfo` + Zustand | App |
-| Кэш данных при оффлайне | TanStack Query `gcTime` | App |
-| Блокировка мутаций при оффлайне | Проверка в `mutationFn` | App |
-| Persistентный кэш между запусками | `AsyncStorage` адаптер | Data |
-| Определение, что операция требует сети | Флаг в Domain-интерфейсе | Domain |
+| Задача | Решение | Владелец |
+|---|---|---|
+| Показать состояние подключения | input adapter `NetInfo` → `INetworkStatus` | App |
+| Преобразовать сетевой отказ запроса | HTTP/Data adapter → стабильный failure | Data |
+| Загрузить уведомления | use case через `INotificationsRepository` | Domain |
+| Хранить server-state в текущей сессии | TanStack Query | App |
+| Восстановить query-cache после запуска | persister, подключённый в Composition Root | App + инфраструктурный адаптер |
+| Решить, можно ли поставить mutation в очередь | отдельная продуктовая политика | Domain/Application |
 
-## Шаг 1. Хук отслеживания состояния сети
+## Шаг 1. Адаптер состояния сети для Presentation
+
+Событие сети приходит от платформы к App, поэтому его можно нормализовать на presentation-границе. Сырой `NetInfoState` не распространяется дальше адаптера.
 
 ```typescript
-// src/common/hooks/useNetworkStatus.ts
+// app/common/network/useNetworkStatus.ts
+import NetInfo from '@react-native-community/netinfo';
 import { useEffect, useState } from 'react';
-import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 
 interface INetworkStatus {
-  isOnline: boolean;
-  isInternetReachable: boolean | null;
+  readonly isOnline: boolean | null;
 }
 
 const useNetworkStatus = (): INetworkStatus => {
-  const [networkStatus, setNetworkStatus] = useState<INetworkStatus>({
-    isOnline: true,
-    isInternetReachable: true,
-  });
+  const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const unsubscribeCallback = NetInfo.addEventListener((stateValue: NetInfoState) => {
-      setNetworkStatus({
-        isOnline: stateValue.isConnected ?? false,
-        isInternetReachable: stateValue.isInternetReachable,
-      });
+    return NetInfo.addEventListener((stateValue) => {
+      const hasConnection = stateValue.isConnected === true;
+      const hasInternet = stateValue.isInternetReachable !== false;
+      setIsOnline(hasConnection && hasInternet);
     });
-
-    return unsubscribeCallback;
   }, []);
 
-  return networkStatus;
+  return { isOnline };
 };
 
 export { useNetworkStatus };
+export type { INetworkStatus };
 ```
 
-## Шаг 2. Показ кэшированных данных при оффлайне
+Начальное значение `null` означает «ещё не определено». Нельзя оптимистично считать устройство online до первого события платформы.
 
-TanStack Query хранит данные в памяти пока `gcTime` не истёк. При оффлайне старые данные помечаются как `isStale`, но всё равно отображаются. Компонент получает флаг и показывает баннер.
+## Шаг 2. Типизированный сетевой failure
+
+Domain определяет устойчивый результат, который нужен его потребителю. Data преобразует ошибку конкретного HTTP-клиента на своей границе.
 
 ```typescript
-// src/common/hooks/useNotificationsQuery.ts
-import { useQuery } from '@tanstack/react-query';
-import { createNotificationsRepository } from '@data/repositories';
-import { createGetNotificationsUseCase } from '@domain/notifications/use-cases';
-import { QUERY_KEYS } from '@/common/const/queryKeys';
+// domain/common/errors/NetworkUnavailableError.ts
+class NetworkUnavailableError extends Error {
+  readonly code = 'network_unavailable';
+}
 
-const repositoryInstance = createNotificationsRepository();
-const useCaseInstance = createGetNotificationsUseCase(repositoryInstance);
+export { NetworkUnavailableError };
+```
 
+```typescript
+// data/http/mapHttpError.ts
+const mapHttpError = (errorValue: unknown): Error => {
+  if (isNetworkError(errorValue)) {
+    return new NetworkUnavailableError();
+  }
+
+  return new UnexpectedInfrastructureError({ cause: errorValue });
+};
+```
+
+`error.message` не используется как discriminant: текст зависит от библиотеки и версии SDK.
+
+## Шаг 3. Composition Root
+
+Repository и use cases создаются один раз в точке сборки. Feature-хуки получают готовые зависимости из application graph.
+
+```typescript
+// app/bootstrap/createApplication.ts
+const notificationsRepository = createNotificationsRepository(httpClient, localDatabase);
+const eventsRepository = createEventsRepository(httpClient);
+
+const application = {
+  notifications: {
+    getNotifications: createGetNotificationsUseCase(notificationsRepository),
+  },
+  events: {
+    checkIn: createCheckinUseCase(eventsRepository),
+  },
+};
+```
+
+## Шаг 4. Query с кэшированным fallback
+
+```typescript
+// app/modules/notifications/useNotificationsQuery.ts
 const useNotificationsQuery = () => {
+  const { notifications } = useApplicationDependencies();
+
   return useQuery({
     queryKey: QUERY_KEYS.NOTIFICATIONS.LIST,
-    queryFn: () => useCaseInstance.execute({ page: 0, limit: 50 }),
-    staleTime: 1000 * 60 * 5,     // 5 минут — данные свежие
-    gcTime: 1000 * 60 * 60 * 24,  // 24 часа — кэш живёт в памяти
-    retry: (failureCount, error) => {
-      // Не повторяем при отсутствии сети — бессмысленно
-      if (error.message === 'Network Error') return false;
+    queryFn: () => notifications.getNotifications.execute({ page: 0, limit: 50 }),
+    staleTime: 5 * 60 * 1_000,
+    gcTime: 24 * 60 * 60 * 1_000,
+    networkMode: 'offlineFirst',
+    retry: (failureCount, errorValue) => {
+      if (errorValue instanceof NetworkUnavailableError) return false;
       return failureCount < 2;
     },
   });
 };
-
-export { useNotificationsQuery };
 ```
+
+`gcTime` удерживает неактивный query-cache только в памяти текущего процесса. Он не обеспечивает восстановление после перезапуска; для этого отдельно подключается persister.
+
+View различает данные, ошибку и свежесть:
 
 ```tsx
-// app/modules/notifications/components/NotificationsScreen.tsx
-import { useNotificationsQuery } from '@/common/hooks/useNotificationsQuery';
-import { useNetworkStatus } from '@/common/hooks/useNetworkStatus';
+const notificationsQuery = useNotificationsQuery();
+const { isOnline } = useNetworkStatus();
 
-export default function NotificationsScreen() {
-  const { data, isLoading, isStale } = useNotificationsQuery();
-  const { isOnline } = useNetworkStatus();
+{isOnline === false && notificationsQuery.data && (
+  <OfflineBanner text="Нет подключения — показана доступная сохранённая версия" />
+)}
 
-  return (
-    <View>
-      {/* Баннер оффлайн-режима */}
-      {!isOnline && (
-        <View style={styles.offlineBanner}>
-          <Text style={styles.offlineBannerText}>
-            Нет подключения — показаны сохранённые данные
-          </Text>
-        </View>
-      )}
+{notificationsQuery.isError && !notificationsQuery.data && (
+  <NotificationsErrorState failure={notificationsQuery.error} />
+)}
 
-      {/* Пометка об устаревших данных при наличии сети */}
-      {isOnline && isStale && (
-        <Text style={styles.staleHint}>Данные обновляются...</Text>
-      )}
-
-      {isLoading && !data && <ActivityIndicator />}
-
-      <FlatList
-        data={data?.items}
-        renderItem={({ item }) => <NotificationCard notification={item} />}
-        keyExtractor={(item) => item.id}
-      />
-    </View>
-  );
-}
+<NotificationsList items={notificationsQuery.data?.items ?? []} />
 ```
 
-## Шаг 3. Блокировка мутаций при оффлайне
+Наличие `data` проверяется отдельно: отсутствие сети не означает, что кэш действительно существует.
 
-Действия, которые требуют сети, должны быть заблокированы с понятным сообщением. Проверка происходит в `mutationFn` перед вызовом use-case.
+## Шаг 5. Mutation
+
+UI может временно отключить кнопку по network status, но use case всё равно запускается без прямого `NetInfo.fetch()` в `mutationFn`. Data обработает реальный сетевой отказ.
 
 ```typescript
-// src/common/hooks/useCheckinMutation.ts
-import { useMutation } from '@tanstack/react-query';
-import NetInfo from '@react-native-community/netinfo';
-import { createCheckinUseCase } from '@domain/events/use-cases';
-import { createEventsRepository } from '@data/repositories';
-
-const repositoryInstance = createEventsRepository();
-const useCaseInstance = createCheckinUseCase(repositoryInstance);
-
 const useCheckinMutation = () => {
-  return useMutation({
-    mutationFn: async (params: { eventId: string; userId: string }) => {
-      // Явная проверка перед мутацией
-      const networkState = await NetInfo.fetch();
-      if (!networkState.isConnected || !networkState.isInternetReachable) {
-        throw new Error('NO_NETWORK');
-      }
+  const { events } = useApplicationDependencies();
 
-      return useCaseInstance.execute(params);
-    },
-    retry: 0, // Мутации не повторяем при ошибке сети — пользователь должен повторить вручную
+  return useMutation({
+    mutationFn: (command: ICheckinCommand) => events.checkIn.execute(command),
+    retry: 0,
   });
 };
-
-export { useCheckinMutation };
 ```
 
 ```tsx
-// Компонент с блокировкой кнопки
 const { isOnline } = useNetworkStatus();
 const checkinMutation = useCheckinMutation();
 
 <UIButton
   title="Зарегистрировать посещение"
   onPress={() => checkinMutation.mutate({ eventId, userId })}
-  disabled={!isOnline || checkinMutation.isPending}
+  disabled={isOnline !== true || checkinMutation.isPending}
 />
-{!isOnline && (
-  <Text>Регистрация недоступна в оффлайн-режиме</Text>
-)}
-{checkinMutation.error?.message === 'NO_NETWORK' && (
-  <Text>Подключитесь к интернету и повторите</Text>
+
+{checkinMutation.error instanceof NetworkUnavailableError && (
+  <Text>Подключитесь к интернету и повторите действие</Text>
 )}
 ```
 
-## Шаг 4. Persistентный кэш через AsyncStorage
+Если продукт требует принять действие без сети, это уже offline-first mutation: необходимы очередь, идемпотентный идентификатор, синхронизация и политика конфликтов. Простая проверка `isOnline` такую систему не заменяет.
 
-Чтобы кэш переживал перезапуск приложения, используют `persister` для TanStack Query. Данные сериализуются в `AsyncStorage`.
+## Шаг 6. Persisted query-cache
+
+Инфраструктурный persister скрывает `AsyncStorage`, а Composition Root подключает его к presentation query-cache:
 
 ```typescript
-// data/storage/QueryCachePersister.ts
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
-
-const CACHE_KEY = 'app-query-cache-v1';
-
-const queryPersister = createAsyncStoragePersister({
+// data/storage/createQueryCachePersister.ts
+const createQueryCachePersister = () => createAsyncStoragePersister({
   storage: AsyncStorage,
-  key: CACHE_KEY,
-  throttleTime: 1000, // Не чаще раза в секунду
-});
-
-export { queryPersister };
-```
-
-```typescript
-// app/_layout.tsx (подключение persister)
-import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { queryPersister } from '@data/storage/QueryCachePersister';
-
-const queryClientInstance = new QueryClient({
-  defaultOptions: {
-    queries: {
-      gcTime: 1000 * 60 * 60 * 24, // 24 часа — кэш живёт после закрытия
-    },
-  },
-});
-
-export default function RootLayout() {
-  return (
-    <PersistQueryClientProvider
-      client={queryClientInstance}
-      persistOptions={{ persister: queryPersister }}
-    >
-      {/* ... */}
-    </PersistQueryClientProvider>
-  );
-}
-```
-
-**Важно:** не все данные следует кэшировать между перезапусками. Критичные для безопасности данные (токены, ключи) хранятся только в SecureStore, никогда в AsyncStorage.
-
-## Шаг 5. Конфигурация TanStack Query для оффлайн-сценариев
-
-```typescript
-// Глобальная конфигурация с учётом оффлайна
-const queryClientInstance = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5,     // 5 минут свежести
-      gcTime: 1000 * 60 * 60 * 24,  // 24 часа хранения кэша
-      retry: (failureCount, error) => {
-        if ((error as Error).message === 'Network Error') return false;
-        return failureCount < 2;
-      },
-      networkMode: 'offlineFirst', // Сначала кэш, потом сеть
-    },
-    mutations: {
-      networkMode: 'online', // Мутации только при сети
-      retry: 0,
-    },
-  },
+  key: 'app-query-cache-v1',
+  throttleTime: 1_000,
 });
 ```
 
-## Что не следует кэшировать оффлайн
+```tsx
+// app/bootstrap/RootProviders.tsx
+const queryPersister = createQueryCachePersister();
 
-| Данные | Почему не кэшировать |
-|--------|---------------------|
-| Токены сессии, PIN, биометрический токен | Хранятся в SecureStore, не в кэше запросов |
-| Результаты use-case (валиден ли токен, разрешено ли действие) | Зависят от времени и контекста, кэш даст неверный ответ |
-| Персональные данные с ограниченным сроком | Требуют шифрования, AsyncStorage — открытый текст |
-| Статусы, требующие real-time актуальности | Будут вводить пользователя в заблуждение |
+<PersistQueryClientProvider
+  client={queryClient}
+  persistOptions={{ persister: queryPersister }}
+>
+  <ApplicationProvider value={application}>{children}</ApplicationProvider>
+</PersistQueryClientProvider>
+```
 
-## Деградация vs. Оффлайн-first
+Импорт Data здесь допустим: `RootProviders` является частью Composition Root. Feature-компоненты и хуки конкретные реализации Data не импортируют.
 
-**Управляемая деградация** (описана в этом документе):
-- Показывает кэшированные данные с пометкой
-- Блокирует мутации с объяснением
-- Не требует специального синхронизатора
+Persisted query-cache должен иметь `maxAge`, версию/buster и правила фильтрации. Токены, PIN, биометрические данные и другая чувствительная информация в него не помещаются.
 
-**Оффлайн-first** (для более сложных сценариев):
-- Очередь мутаций, отложенная синхронизация
-- Конфликты при параллельных изменениях
-- Требует WatermelonDB / SQLite + background sync
-- Оправдан для полевых задач (инспекции, акты, заявки без сети)
+## Управляемая деградация и offline-first
 
-## Чек-лист оффлайн-режима
+| Управляемая деградация | Offline-first |
+|---|---|
+| показывает ранее полученные данные | локальная база является рабочим источником |
+| mutation может быть недоступна | mutation записывается локально |
+| очереди синхронизации нет | есть очередь, retry/backoff и idempotency |
+| конфликты не разрешаются | определена стратегия конфликтов |
 
-- [ ] `gcTime` настроен на достаточно долгий период для оффлайн-использования
-- [ ] Компоненты показывают баннер при `!isOnline`
-- [ ] Мутации проверяют наличие сети перед вызовом use-case
-- [ ] Ошибка `NO_NETWORK` отображается явным сообщением, а не техническим текстом
-- [ ] Persistентный кэш не хранит чувствительные данные (токены, ключи)
-- [ ] `networkMode: 'offlineFirst'` для чтения, `'online'` для записи
+## Чек-лист
+
+- [ ] Platform state нормализуется в App-адаптере и не выдаёт сырой SDK-тип.
+- [ ] Начальное состояние сети выражено как unknown, а не как ложный online.
+- [ ] Data преобразует сетевую ошибку в стабильный failure.
+- [ ] Retry не сравнивает `error.message`.
+- [ ] Repository и use cases создаются в Composition Root.
+- [ ] `gcTime` не описывается как persistence между запусками.
+- [ ] UI проверяет наличие cached data отдельно от network status.
+- [ ] Предварительная блокировка кнопки не считается гарантией результата.
+- [ ] Persisted cache имеет срок, версию и фильтрацию чувствительных данных.
+- [ ] Offline mutation не заявляется без очереди, idempotency и conflict policy.
 
 ## Дальнейшее чтение
 
-- [Управление состоянием](../cross-cutting/state-management.md) — Server State и его жизненный цикл
-- [Обработка ошибок](../error-handling.md) — стратегии retry и fallback
-- [Пример polling](./polling.md) — `refetchIntervalInBackground: false` для экономии в оффлайне
+- [Платформенные адаптеры](../cross-cutting/platform-adapters.md) — направление событий и lifecycle подписок.
+- [Управление состоянием](../cross-cutting/state-management.md) — Server State и persistent state.
+- [Обработка ошибок](../error-handling.md) — retry, fallback и типизированные failures.
+- [Внедрение зависимостей](../cross-cutting/di.md) — Composition Root и application graph.

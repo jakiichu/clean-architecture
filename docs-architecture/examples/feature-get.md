@@ -1,6 +1,6 @@
 ---
 title: Пример — Получение данных (GET)
-sidebar_position: 4
+sidebar_position: 2
 ---
 
 # Пример: Получение данных (GET)
@@ -82,7 +82,7 @@ class GetUsersUseCase implements IGetUsersUseCase {
 
   async execute(port: IGetUsersPort): Promise<IUsersListDto> {
     if (port.page < 0 || port.limit <= 0) {
-      throw new Error('Invalid pagination parameters');
+      throw new InvalidPaginationError();
     }
     return this.usersRepository.getUsersList(port);
   }
@@ -125,15 +125,14 @@ export { UsersRepository };
 ```typescript
 // app/modules/users/hooks/use-users-query.ts
 import { useQuery } from '@tanstack/react-query';
-import { GetUsersUseCase } from '../../../domain/users/use-case/get-users';
-import { usersRepositoryInstance } from '../../../data/repositories/users/users-repository';
-
-const useCase = new GetUsersUseCase(usersRepositoryInstance);
+import { useApplicationDependencies } from '../../../app/providers/ApplicationProvider';
 
 export function useUsersQuery(port: IGetUsersPort) {
+  const { users } = useApplicationDependencies();
+
   return useQuery({
     queryKey: ['users', port.page, port.limit, port.searchQuery],
-    queryFn: () => useCase.execute(port),
+    queryFn: () => users.getUsers.execute(port),
     staleTime: 1000 * 60 * 5,
     retry: 1,
   });
@@ -193,7 +192,7 @@ import type { INotificationsListDto } from '../entities/INotification';
 const createGetNotificationsUseCase = (repository: INotificationsRepository) => {
   const execute = async (port: IGetNotificationsPort): Promise<INotificationsListDto> => {
     if (port.limit <= 0 || port.limit > 100) {
-      throw new Error('Limit must be between 1 and 100');
+      throw new InvalidPaginationError();
     }
     return repository.getNotifications(port);
   };
@@ -261,17 +260,15 @@ export { NotificationsRepository };
 ```typescript
 // src/common/hooks/useNotificationsQuery.ts
 import { useQuery } from '@tanstack/react-query';
-import { createGetNotificationsUseCase } from '@domain/notifications/use-cases/GetNotificationsUseCase';
-import { NotificationsRepository } from '@data/repositories/NotificationsRepository';
 import { QUERY_KEYS } from '@/common/const/queryKeys';
-
-const repositoryInstance = new NotificationsRepository();
-const useCaseInstance = createGetNotificationsUseCase(repositoryInstance);
+import { useApplicationDependencies } from '@/app/providers/ApplicationProvider';
 
 const useNotificationsQuery = (onlyUnread = false) => {
+  const { notifications } = useApplicationDependencies();
+
   return useQuery({
     queryKey: QUERY_KEYS.NOTIFICATIONS.LIST(onlyUnread),
-    queryFn: () => useCaseInstance.execute({ page: 0, limit: 50, onlyUnread }),
+    queryFn: () => notifications.getNotifications.execute({ page: 0, limit: 50, onlyUnread }),
     staleTime: 1000 * 60 * 2, // 2 минуты — уведомления меняются чаще
     gcTime: 1000 * 60 * 30,
   });
