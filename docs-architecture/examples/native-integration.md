@@ -1,6 +1,6 @@
 ---
 title: Интеграция с нативными модулями
-sidebar_position: 7
+sidebar_position: 4
 ---
 
 # Интеграция с нативными модулями и аппаратным обеспечением
@@ -13,7 +13,7 @@ sidebar_position: 7
 
 1. **Абстракция в Domain:** Слой `Domain` объявляет интерфейс (контракт), описывающий, *что* нужно сделать.
 2. **Реализация в Data:** Слой `Data` реализует этот интерфейс, используя конкретную React Native библиотеку.
-3. **Обработка ошибок:** Нативные ошибки (например, "Пользователь отменил FaceID") перехватываются в `Data` и преобразуются в доменные ошибки или DTO, понятные бизнес-логике.
+3. **Обработка ошибок:** Нативные ошибки перехватываются в `Data` и преобразуются в стабильный failure или явно типизированный capability result. DTO и типы SDK границу `Data` не покидают.
 4. **Изоляция платформ:** Если логика на iOS и Android отличается, `Data`-слой скрывает эти различия за единым интерфейсом.
 
 ## Пример: Защищённое хранилище (Secure Storage)
@@ -99,16 +99,17 @@ const createVerifyLoginUseCase = (secureStorage: ISecureStorage) => {
 ```typescript
 // domain/auth/interface/IBiometricProvider.ts
 
-interface IBiometricAuthenticationResult {
-  isAuthenticated: boolean;
-  isHardwareAvailable: boolean;
-}
+type TBiometricAuthenticationResult =
+  | { type: 'authenticated' }
+  | { type: 'cancelled' }
+  | { type: 'not-enrolled' }
+  | { type: 'unsupported' };
 
 interface IBiometricProvider {
-  authenticateWithBiometrics: () => Promise<IBiometricAuthenticationResult>;
+  authenticateWithBiometrics: () => Promise<TBiometricAuthenticationResult>;
 }
 
-export type { IBiometricProvider, IBiometricAuthenticationResult };
+export type { IBiometricProvider, TBiometricAuthenticationResult };
 ```
 
 ### 2. Реализация в Data
@@ -116,25 +117,23 @@ export type { IBiometricProvider, IBiometricAuthenticationResult };
 ```typescript
 // data/native/BiometricAdapter.ts
 import * as LocalAuthentication from 'expo-local-authentication';
-import type { IBiometricProvider, IBiometricAuthenticationResult } from '../../domain/auth/interface/IBiometricProvider';
+import type { IBiometricProvider, TBiometricAuthenticationResult } from '../../domain/auth/interface/IBiometricProvider';
 
 const createBiometricAdapter = (): IBiometricProvider => {
-  const authenticateWithBiometrics = async (): Promise<IBiometricAuthenticationResult> => {
+  const authenticateWithBiometrics = async (): Promise<TBiometricAuthenticationResult> => {
     const isHardwareAvailableValue: boolean = await LocalAuthentication.hasHardwareAsync();
     const isEnrolledValue: boolean = await LocalAuthentication.isEnrolledAsync();
 
     if (!isHardwareAvailableValue || !isEnrolledValue) {
-      return { isAuthenticated: false, isHardwareAvailable: isHardwareAvailableValue };
+      return isHardwareAvailableValue ? { type: 'not-enrolled' } : { type: 'unsupported' };
     }
 
     const authenticationResultValue: LocalAuthentication.AuthenticationResult = await LocalAuthentication.authenticateAsync({
       promptMessage: 'Подтвердите личность для входа',
     });
 
-    return {
-      isAuthenticated: authenticationResultValue.success,
-      isHardwareAvailable: true,
-    };
+    if (authenticationResultValue.success) return { type: 'authenticated' };
+    return { type: 'cancelled' };
   };
 
   return { authenticateWithBiometrics };
@@ -145,16 +144,19 @@ export { createBiometricAdapter };
 
 ## Обработка разрешений (Permissions)
 
-Запрос разрешений (камера, уведомления) — это инфраструктурная задача.
-- Если разрешение требуется **до** входа в приложение (например, для работы камеры сканера), логика запроса выносится в `Data` или специальный `PermissionService`.
-- `Domain` должен оперировать фактами: "Камера доступна" (`true/false`), а не процессом получения прав.
+Вызов системного API разрешений является инфраструктурной задачей, но момент запроса — продуктовым и presentation-решением:
+
+- Domain-порт описывает необходимую возможность и устойчивые результаты `granted`, `denied`, `blocked`, `unsupported`;
+- Data-адаптер вызывает конкретный SDK и переводит его статусы;
+- App решает, когда показать предварительное объяснение, запустить запрос и предложить открыть настройки;
+- `boolean` недостаточен, если UI должен различать отказ, системную блокировку и отсутствие API.
 
 ## Чек-лист для нативных модулей
 
 - [ ] Интерфейс (`I...Provider`) объявлен в `domain/interface`?
 - [ ] Реализация в `data` использует только нативные библиотеки?
 - [ ] Отсутствуют прямые вызовы нативных API в `app` (компонентах)?
-- [ ] Ошибки нативного уровня (например, `CameraPermissionDenied`) маппятся в понятные сообщения для UI?
+- [ ] Ошибки SDK преобразуются в стабильные failure/capability-типы, а локализованный текст формируется в App?
 - [ ] Используются полные имена переменных и стрелочные функции в адаптерах?
 
 ## Дальнейшее чтение

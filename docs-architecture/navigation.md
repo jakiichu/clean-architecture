@@ -127,30 +127,31 @@ export default function AppLayout() {
 
 ## Передача параметров между экранами
 
-Для передачи данных между экранами используются параметры маршрута или хранилище UI-состояния (Zustand). Прямую передачу бизнес-объектов через навигационные параметры следует избегать.
+Для перехода между независимо открываемыми экранами маршрут обычно передаёт устойчивый идентификатор. Целевой экран восстанавливает актуальные данные через query/use case. Прямую сериализацию бизнес-объекта в параметры следует избегать.
 
 ```typescript
-// Допустимо: передача скалярных ID
-router.push({ pathname: ROUTER_PATH.AUTH_SMS, params: { phone: '+79001234567' } });
+// Допустимо: передача устойчивого идентификатора
+router.push({ pathname: ROUTER_PATH.TRIP_DETAILS, params: { tripId } });
 
 // Получение параметров
 import { useLocalSearchParams } from 'expo-router';
 
-const { phone } = useLocalSearchParams<{ phone: string }>();
+const { tripId } = useLocalSearchParams<{ tripId: string }>();
 ```
 
-**Предпочтительный подход для сложных данных:** сохранять их в Zustand-сторе при успехе предыдущего шага, а следующий экран читает из стора.
+Feature-scoped store подходит для временного черновика одного многошагового flow, если промежуточное состояние ещё не имеет устойчивого ID. Это частный случай, а не общий способ передачи данных между экранами. Для store необходимо определить владельца, ключ экземпляра flow, восстановление и момент очистки.
 
 ```typescript
-// При успехе SMS-запроса:
-onSuccess: (_, payload) => {
-  setPhoneNumberValue(payload.phoneNumber); // → Zustand
-  router.push(ROUTER_PATH.AUTH_SMS);
-},
+// Начало конкретного onboarding flow:
+const flowId = createOnboardingDraft();
+router.push({ pathname: ROUTER_PATH.ONBOARDING_PROFILE, params: { flowId } });
 
-// На экране SMS:
-const { phoneNumber } = useSessionStore();
+// Экран читает только свой черновик, а после завершения flow он удаляется:
+const draft = useOnboardingDraft(flowId);
+completeOnboarding(flowId).finally(() => removeOnboardingDraft(flowId));
 ```
+
+Такой экран не должен зависеть только от случайно оставшегося глобального Zustand-состояния: иначе deep link, восстановление процесса и второй параллельный flow станут непредсказуемыми.
 
 ## Анимации переходов
 
@@ -238,7 +239,8 @@ const usePreventBack = (shouldPrevent: boolean) => {
 - [ ] Хардкод строк маршрутов в компонентах отсутствует
 - [ ] Guards реализованы в `_layout.tsx` или на точке входа `index.tsx`
 - [ ] Навигация вызывается только в слое `App` (хуки, callbacks)
-- [ ] Сложные данные между экранами передаются через Zustand, не через params
+- [ ] Между независимо открываемыми экранами передаётся устойчивый ID, а данные восстанавливаются целевым экраном
+- [ ] Feature store используется только для явно ограниченного flow и имеет правила очистки
 - [ ] Анимации настроены централизованно в layout-файлах
 
 ## Дальнейшее чтение

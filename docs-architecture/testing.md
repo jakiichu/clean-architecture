@@ -1,326 +1,951 @@
 ---
 title: Стратегия тестирования
-sidebar_position: 8
+sidebar_position: 9
 ---
 
 # Стратегия тестирования
 
-Чистая архитектура создаёт естественные границы для тестирования: каждый слой тестируется отдельно, с минимальным количеством заглушек (моков). Бизнес-логика в `Domain` полностью изолирована от сети и ОС, поэтому покрывается простыми unit-тестами. Инфраструктурный код в `Data` проверяется на корректность маппинга и поведение в граничных случаях. Слой `App` тестируется на уровне взаимодействия компонентов с пользователем.
+Тесты должны подтверждать поведение на архитектурных границах, а не повторять внутреннюю реализацию. Clean Architecture помогает выбрать подходящий уровень проверки:
 
-## Пирамида тестирования
+- Domain проверяется без React и реального I/O;
+- Data проверяется на соответствие контрактам и работу с технологиями;
+- App проверяется через наблюдаемое поведение ViewModel и View;
+- несколько критичных сценариев проходят через всю систему.
 
+Хорошая стратегия не максимизирует количество unit-тестов. Она минимизирует вероятность, что важное поведение останется непроверенным или тесты начнут мешать безопасному рефакторингу.
+
+## Уровни тестирования
+
+```text
+                 E2E
+          критичные пути пользователя
+
+          Integration / Component
+       границы модулей и реальный UI
+
+       Unit / Contract / Property
+  Domain, мапперы, политики, реализации портов
 ```
-           [E2E тесты]
-          Detox / Maestro
-          Полные сценарии
 
-       [Интеграционные тесты]
-      React Testing Library
-    Компоненты + хуки + запросы
+Процентное правило вроде «80% тестов должны быть unit» не является архитектурной целью. Пропорция зависит от риска:
 
-  [Unit-тесты] ← 80% покрытия здесь
-Domain: use-case, validators, mappers
-```
+- сложный алгоритм планирования требует много Domain-тестов;
+- интеграция с нестабильным API требует contract/integration-тестов;
+- сложный accessible widget требует component-тестов;
+- критичный платёжный поток требует E2E независимо от unit-покрытия.
 
-Большинство тестов должны быть на уровне `Domain`. Они быстрые, не требуют устройства и не зависят от сетевых условий.
+## Что именно является объектом теста
 
-## Тестирование слоя Domain
+| Объект | Основной вопрос |
+|---|---|
+| Value Object | Невалидное значение невозможно создать? |
+| Entity/Aggregate | Инварианты сохраняются после перехода? |
+| Domain Service | Алгоритм выдаёт корректный результат? |
+| Use Case | Сценарий правильно координирует зависимости? |
+| Repository contract | Любая реализация соблюдает одинаковое поведение? |
+| Data Source | Корректно ли используется конкретная технология? |
+| Mapper | Внешний формат безопасно преобразуется? |
+| Repository implementation | Правильно ли выбираются источники и fallback? |
+| ViewModel | Результаты сценария превращаются в UI State/Effects? |
+| Compound Component | Композиция доступна и вызывает UI Actions? |
+| Page/Feature | Части App работают совместно? |
+| E2E | Пользователь действительно завершает критичный путь? |
 
-Domain-слой тестируется в полной изоляции. Зависимости (репозитории, провайдеры) заменяются простыми заглушками.
+## Терминология тестовых замен
 
-### Пример: тест use-case получения одноразового кода
+Слово «mock» часто используется для любых подмен, но различия полезны:
 
-```typescript
-// domain/otp/use-cases/__tests__/GetOtpCodeUseCase.test.ts
-import { createGetOtpCodeUseCase } from '../GetOtpCodeUseCase';
-import type { IOtpRepository } from '../../interfaces/IOtpRepository';
+| Замена | Назначение |
+|---|---|
+| **Stub** | Возвращает заранее подготовленный ответ |
+| **Spy** | Запоминает вызовы для проверки взаимодействия |
+| **Fake** | Рабочая упрощённая реализация, например in-memory Repository |
+| **Mock** | Проверяет заранее заданный протокол взаимодействия |
 
-const createMockOtpRepository = (overrides?: Partial<IOtpRepository>): IOtpRepository => ({
-  fetchCurrentCode: async () => ({
-    code: '482910',
-    expiresAtTimestamp: Date.now() + 30_000,
-    isValid: true,
-  }),
-  fetchConfig: async () => ({ lifetimeSeconds: 30, length: 6 }),
-  ...overrides,
-});
+Для Domain обычно удобнее Fake и небольшие Stub. Они меньше связывают тест с последовательностью внутренних вызовов.
 
-describe('GetOtpCodeUseCase', () => {
-  it('возвращает валидный код с временем жизни в будущем', async () => {
-    const useCaseInstance = createGetOtpCodeUseCase(createMockOtpRepository());
+## Тестирование Value Object
 
-    const resultValue = await useCaseInstance.execute();
+Value Object проверяется через публичное создание и поведение:
 
-    expect(resultValue.code).toBe('482910');
-    expect(resultValue.isValid).toBe(true);
-    expect(resultValue.expiresAtTimestamp).toBeGreaterThan(Date.now());
-  });
-
-  it('выбрасывает ошибку, если сервер вернул уже истёкший код', async () => {
-    const useCaseInstance = createGetOtpCodeUseCase(
-      createMockOtpRepository({
-        fetchCurrentCode: async () => ({
-          code: '000000',
-          expiresAtTimestamp: Date.now() - 1_000,
-          isValid: false,
-        }),
-      })
+```ts
+describe('DateRange', () => {
+  it('создаёт период, если конец не раньше начала', () => {
+    const range = DateRange.create(
+      LocalDate.parse('2026-08-10'),
+      LocalDate.parse('2026-08-14'),
     );
 
-    await expect(useCaseInstance.execute()).rejects.toThrow('Received an already expired code');
+    expect(range.durationInDays()).toBe(5);
+  });
+
+  it('запрещает период с концом раньше начала', () => {
+    expect(() =>
+      DateRange.create(
+        LocalDate.parse('2026-08-14'),
+        LocalDate.parse('2026-08-10'),
+      ),
+    ).toThrow(InvalidDateRange);
   });
 });
 ```
 
-### Пример: тест use-case валидации SMS-кода
+Не нужно проверять private-поля или конкретный порядок внутренних функций. Тест защищает правило: любой созданный `DateRange` корректен.
 
-```typescript
-// domain/auth/use-cases/__tests__/VerifySmsCodeUseCase.test.ts
-import { createVerifySmsCodeUseCase } from '../verifySmsCodeUseCase';
-import type { IAuthRepository } from '../../interfaces/IAuthRepository';
+## Тестирование Entity и Aggregate
 
-const createMockAuthRepository = (overrides?: Partial<IAuthRepository>): IAuthRepository => ({
-  sendActivationSmsCode: jest.fn().mockResolvedValue(undefined),
-  verifyActivationSmsCode: jest.fn().mockResolvedValue({
-    sessionToken: 'token-xyz',
-    userGuid: 'user-001',
-  }),
-  invalidateUserSession: jest.fn().mockResolvedValue(undefined),
-  ...overrides,
-});
+Aggregate проверяется как последовательность допустимых переходов:
 
-describe('VerifySmsCodeUseCase', () => {
-  it('возвращает сессию при корректном коде', async () => {
-    const mockRepoInstance = createMockAuthRepository();
-    const useCaseInstance = createVerifySmsCodeUseCase({ authRepository: mockRepoInstance });
+```ts
+describe('Trip.addPlace', () => {
+  it('добавляет место в существующий день поездки', () => {
+    const trip = tripBuilder()
+      .withPeriod('2026-08-10', '2026-08-14')
+      .build();
 
-    const sessionResult = await useCaseInstance.execute({
-      phoneNumber: '+79001234567',
-      smsCode: '123456',
-    });
-
-    expect(sessionResult.sessionToken).toBe('token-xyz');
-    expect(mockRepoInstance.verifyActivationSmsCode).toHaveBeenCalledTimes(1);
-  });
-
-  it('пробрасывает ошибку репозитория при неверном коде', async () => {
-    const mockRepoInstance = createMockAuthRepository({
-      verifyActivationSmsCode: jest.fn().mockRejectedValue(new Error('Invalid SMS code')),
-    });
-    const useCaseInstance = createVerifySmsCodeUseCase({ authRepository: mockRepoInstance });
-
-    await expect(
-      useCaseInstance.execute({ phoneNumber: '+79001234567', smsCode: '000000' })
-    ).rejects.toThrow('Invalid SMS code');
-  });
-});
-```
-
-## Тестирование слоя Data
-
-Слой `Data` тестируется на корректность маппинга и обработку ошибочных ответов сервера. HTTP-клиент мокируется через `jest.mock` или `axios-mock-adapter`.
-
-### Пример: тест репозитория (маппинг ответа)
-
-```typescript
-// data/repositories/__tests__/AuthRepository.test.ts
-import axios from 'axios';
-import MockAdapter from 'axios-mock-adapter';
-import { AuthRepository } from '../AuthRepository';
-
-describe('AuthRepository.verifyActivationSmsCode', () => {
-  let axiosMockInstance: MockAdapter;
-
-  beforeEach(() => {
-    axiosMockInstance = new MockAdapter(axios);
-  });
-
-  afterEach(() => {
-    axiosMockInstance.restore();
-  });
-
-  it('маппит серверный ответ в IAuthSessionResult', async () => {
-    axiosMockInstance.onPost('/auth/verify').reply(200, {
-      session_token: 'srv-token',
-      user_guid: 'srv-user-001',
-    });
-
-    const repositoryInstance = new AuthRepository();
-    const resultValue = await repositoryInstance.verifyActivationSmsCode(
-      '+79001234567',
-      '123456'
+    const updated = trip.addPlace(
+      LocalDate.parse('2026-08-11'),
+      placeBuilder().withId('museum').build(),
     );
 
-    expect(resultValue.sessionToken).toBe('srv-token');
-    expect(resultValue.userGuid).toBe('srv-user-001');
+    expect(updated.day(LocalDate.parse('2026-08-11')).places)
+      .toHaveLength(1);
   });
 
-  it('выбрасывает ошибку при 401 (неверный код)', async () => {
-    axiosMockInstance.onPost('/auth/verify').reply(401);
+  it('запрещает дату вне периода поездки', () => {
+    const trip = tripBuilder()
+      .withPeriod('2026-08-10', '2026-08-14')
+      .build();
 
-    const repositoryInstance = new AuthRepository();
-    await expect(
-      repositoryInstance.verifyActivationSmsCode('+79001234567', '000000', 'fp')
-    ).rejects.toThrow();
-  });
-});
-```
-
-### Пример: тест адаптера хранилища
-
-```typescript
-// data/storage/__tests__/SecureSessionStorage.test.ts
-import { SecureSessionStorage } from '../SecureSessionStorage';
-
-// Мок expo-secure-store
-jest.mock('expo-secure-store', () => {
-  const storeMap = new Map<string, string>();
-  return {
-    setItemAsync: jest.fn((key, value) => { storeMap.set(key, value); return Promise.resolve(); }),
-    getItemAsync: jest.fn((key) => Promise.resolve(storeMap.get(key) ?? null)),
-    deleteItemAsync: jest.fn((key) => { storeMap.delete(key); return Promise.resolve(); }),
-    WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'when_unlocked_this_device_only',
-  };
-});
-
-describe('SecureSessionStorage', () => {
-  it('сохраняет и загружает сессионные данные', async () => {
-    const storageInstance = new SecureSessionStorage();
-    const payloadValue = {
-      sessionToken: 'tok-123',
-      userGuid: 'usr-456',
-    };
-
-    await storageInstance.saveSessionData(payloadValue);
-    const loadedPayload = await storageInstance.loadSessionData();
-
-    expect(loadedPayload?.sessionToken).toBe('tok-123');
-    expect(loadedPayload?.userGuid).toBe('usr-456');
-  });
-
-  it('возвращает null, если токен не сохранён', async () => {
-    const storageInstance = new SecureSessionStorage();
-    const resultValue = await storageInstance.loadSessionData();
-    expect(resultValue).toBeNull();
+    expect(() =>
+      trip.addPlace(
+        LocalDate.parse('2026-08-20'),
+        placeBuilder().build(),
+      ),
+    ).toThrow(TripDayOutsidePeriod);
   });
 });
 ```
 
-## Тестирование слоя App (хуки)
+Builder создаёт валидную модель с полезными defaults. Он не должен позволять случайно обходить production-фабрики и конструировать невозможное состояние.
 
-Хуки тестируются через `renderHook` из `@testing-library/react-native` с обёрткой в тестовые провайдеры.
+## Тестирование Domain Service
 
-### Пример: тест хука мутации
+Чистый алгоритм проверяется табличными примерами и свойствами:
 
-```typescript
-// src/common/hooks/__tests__/useAuthMutations.test.ts
-import { renderHook, act } from '@testing-library/react-native';
-import { createWrapper } from '../../test-utils/createWrapper';
-import { useAuthMutations } from '../useAuthMutations';
+```ts
+describe.each([
+  ['rain', 'museum'],
+  ['clear', 'park'],
+])(
+  'TripPlanGenerator for %s weather',
+  (condition, expectedCategory) => {
+    it(`предпочитает ${expectedCategory}`, () => {
+      const plan = generator.generate(
+        trip,
+        availablePlaces,
+        forecastWith(condition),
+      );
 
-// Мокируем зависимости данного хука
-jest.mock('@data/repositories', () => ({
-  createAuthRepository: () => ({
-    sendActivationSmsCode: jest.fn().mockResolvedValue(undefined),
-    verifyActivationSmsCode: jest.fn().mockResolvedValue({ sessionToken: 'tok', userGuid: 'u1' }),
-    invalidateUserSession: jest.fn().mockResolvedValue(undefined),
-  }),
-}));
+      expect(plan.firstActivity.category).toBe(expectedCategory);
+    });
+  },
+);
+```
 
-jest.mock('expo-router', () => ({ router: { push: jest.fn(), replace: jest.fn() } }));
+Для алгоритмов с большим пространством входов полезны property-based tests. Пример свойства: генератор никогда не помещает одно место в два дня и никогда не создаёт активность вне периода поездки.
 
-describe('useAuthMutations', () => {
-  it('вызывает навигацию на экран SMS после отправки кода', async () => {
-    const { router } = require('expo-router');
-    const { result } = renderHook(() => useAuthMutations(), { wrapper: createWrapper() });
+## Тестирование Use Case
 
-    await act(async () => {
-      result.current.sendActivationSmsCodeMutation.mutate({ phoneNumber: '+79001234567' });
+Use case получает управляемые зависимости через DI:
+
+```ts
+class InMemoryTripRepository implements TripRepository {
+  private readonly trips = new Map<string, Trip>();
+
+  async getById(id: TripId): Promise<Trip | null> {
+    return this.trips.get(id.value) ?? null;
+  }
+
+  async save(trip: Trip): Promise<void> {
+    this.trips.set(trip.id.value, trip);
+  }
+}
+```
+
+```ts
+describe('CreateTrip', () => {
+  it('разрешает направление и сохраняет новую поездку', async () => {
+    const trips = new InMemoryTripRepository();
+    const destinations = new StubDestinationRepository(berlin);
+    const clock = new FixedClock(
+      Instant.parse('2026-08-06T10:00:00Z'),
+    );
+
+    const createTrip = new CreateTrip(
+      destinations,
+      trips,
+      clock,
+    );
+
+    const id = await createTrip.execute({
+      destinationQuery: 'Berlin',
+      start: LocalDate.parse('2026-08-10'),
+      end: LocalDate.parse('2026-08-14'),
     });
 
-    expect(router.push).toHaveBeenCalled();
+    const saved = await trips.getById(id);
+
+    expect(saved?.destination).toEqual(berlin);
+    expect(saved?.createdAt).toEqual(clock.now());
   });
 });
 ```
 
-### Вспомогательный createWrapper
+Проверяется результат сценария и наблюдаемое состояние Repository. Spy нужен, если сам факт или параметры внешнего вызова являются частью поведения:
 
-```typescript
-// src/common/test-utils/createWrapper.tsx
-import React from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+```ts
+expect(routeRepository.buildRoute).toHaveBeenCalledWith(
+  expectedPoints,
+  TransportMode.Walking,
+);
+```
 
-const createWrapper = () => {
-  const testQueryClientInstance = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+Не следует проверять каждый внутренний вызов только ради покрытия. Такой тест ломается после безопасного рефакторинга без изменения поведения.
 
-  return ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={testQueryClientInstance}>
-      {children}
-    </QueryClientProvider>
-  );
+### Ошибки и отрицательные ветки
+
+Для use case проверяются:
+
+- нарушение входного бизнес-правила;
+- отсутствие обязательной Entity;
+- отказ зависимости;
+- частично доступные данные, если предусмотрен fallback;
+- отсутствие сохранения при неуспешной проверке;
+- идемпотентный повтор, если он обещан контрактом.
+
+Если сценарий возвращает `Result`, проверяется конкретный вариант union. Если выбрасывает стабильную ошибку — конкретный класс/code, а не текст сообщения.
+
+## Contract Tests для Repository
+
+Несколько реализаций одного Repository должны вести себя одинаково в рамках доменного контракта.
+
+```ts
+type TTripRepositoryFactory = {
+  name: string;
+  create(): Promise<TripRepositoryTestContext>;
 };
 
-export { createWrapper };
+function tripRepositoryContract(factory: TTripRepositoryFactory) {
+  describe(`${factory.name} implements TripRepository`, () => {
+    it('возвращает сохранённую поездку', async () => {
+      const context = await factory.create();
+      const trip = tripBuilder().build();
+
+      await context.repository.save(trip);
+
+      expect(await context.repository.getById(trip.id))
+        .toEqual(trip);
+
+      await context.dispose();
+    });
+
+    it('возвращает null для неизвестного id', async () => {
+      const context = await factory.create();
+
+      expect(await context.repository.getById(TripId.create('missing')))
+        .toBeNull();
+
+      await context.dispose();
+    });
+  });
+}
 ```
 
-## Mock-адаптеры (Demo Mode)
+Один suite запускается для:
 
-Для работы в оффлайн-режиме или демонстрации без реального сервера в проекте используются `.mock.ts` файлы с заглушками реализации:
+- `InMemoryTripRepository`;
+- `IndexedDbTripRepository`;
+- другой production-реализации.
 
-```typescript
-// data/repositories/AuthRepository.mock.ts
-import type { IAuthRepository } from '@domain/auth/interfaces/IAuthRepository';
+Contract test не проверяет внутреннюю схему IndexedDB. Он подтверждает обещание интерфейса Domain.
 
-const createMockAuthRepository = (): IAuthRepository => ({
-  sendActivationSmsCode: async (phone) => {
-    console.log('[MOCK] SMS sent to', phone);
-  },
-  verifyActivationSmsCode: async (_phone, _code) => ({
-    sessionToken: 'mock-session-token',
-    userGuid: 'mock-user-guid',
-  }),
-  invalidateUserSession: async () => {},
+## Тестирование Mapper
+
+Mapper проверяется на реальных формах внешних данных:
+
+```ts
+describe('WeatherMapper.fromRemote', () => {
+  it('преобразует температуру и дату в Domain Model', () => {
+    const dto = weatherResponseFixture({
+      date: '2026-08-10',
+      temperature_celsius: 21.5,
+    });
+
+    const forecast = mapper.fromRemote(dto);
+
+    expect(forecast.date).toEqual(
+      LocalDate.parse('2026-08-10'),
+    );
+    expect(forecast.temperature.celsius).toBe(21.5);
+  });
+
+  it('отклоняет ответ без обязательной даты', () => {
+    const dto: unknown = { temperature_celsius: 21.5 };
+
+    expect(() => mapper.fromUnknownRemote(dto))
+      .toThrow(InvalidExternalData);
+  });
 });
-
-export { createMockAuthRepository };
 ```
 
-Переключение на мок-реализацию через конфигурацию:
+Внешняя fixture должна повторять API-формат, а ожидаемый результат — Domain Model. Это защищает границу от случайного протекания DTO.
+
+Стоит проверить:
+
+- обязательные и отсутствующие поля;
+- `null` и неожиданные типы;
+- даты, timezone и единицы измерения;
+- неизвестные enum-значения;
+- совместимость со старой версией ответа, если она поддерживается.
+
+## Тестирование Data Source
+
+Data Source проверяется вместе с ближайшей реальной технологической границей.
+
+### Remote Data Source
+
+Предпочтительно перехватывать HTTP на сетевой границе, а не мокировать внутренние методы клиента:
+
+```ts
+server.use(
+  http.get('/forecast', () =>
+    HttpResponse.json(weatherResponseFixture()),
+  ),
+);
+
+const dto = await dataSource.getForecast(request);
+
+expect(dto.days).toHaveLength(5);
+```
+
+Такой тест проверяет URL, метод, параметры, заголовки и parsing ответа. Если библиотека HTTP заменится, тест поведения может остаться тем же.
+
+Отдельно проверяются timeout, malformed response, rate limit и отмена.
+
+### Local Data Source
+
+Для IndexedDB/SQLite полезнее временная настоящая база или официальный in-memory режим, чем hand-written mock всей библиотеки:
+
+```ts
+const database = await createTestDatabase();
+const dataSource = new IndexedDbTripDataSource(database);
+
+await dataSource.save(tripRecordFixture());
+
+expect(await dataSource.findById('trip-1'))
+  .toEqual(tripRecordFixture());
+```
+
+Проверяются:
+
+- round trip записи и чтения;
+- уникальные ограничения;
+- транзакционный rollback;
+- миграции;
+- corrupted/unsupported data;
+- удаление и очистка конкретной области.
+
+## Тестирование Repository Implementation
+
+Repository координирует Data Source, поэтому тесты сосредоточены на политиках:
+
+```ts
+describe('DefaultWeatherRepository', () => {
+  it('возвращает свежий локальный прогноз без сети', async () => {
+    const local = new InMemoryWeatherDataSource([
+      freshWeatherRecord(),
+    ]);
+    const remote = new SpyWeatherRemoteDataSource();
+
+    const repository = createRepository({ local, remote, clock });
+
+    const result = await repository.getForecast(
+      coordinates,
+      period,
+      RefreshPolicy.IfExpired,
+    );
+
+    expect(result).toEqual(expectedForecast);
+    expect(remote.calls).toHaveLength(0);
+  });
+
+  it('возвращает stale cache при временном сетевом сбое', async () => {
+    const local = new InMemoryWeatherDataSource([
+      staleWeatherRecord(),
+    ]);
+    const remote = new FailingWeatherRemoteDataSource(
+      new NetworkUnavailable(),
+    );
+
+    const result = await createRepository({ local, remote, clock })
+      .getForecast(coordinates, period, RefreshPolicy.IfExpired);
+
+    expect(result.freshness).toBe('stale');
+  });
+});
+```
+
+Полезная матрица:
+
+| Cache | Network | Policy | Ожидание |
+|---|---|---|---|
+| fresh | available | IfExpired | cache, без remote call |
+| stale | available | IfExpired | remote + сохранение |
+| stale | unavailable | IfExpired | stale fallback |
+| empty | unavailable | любое | DataUnavailable |
+| любое | available | ForceRefresh | remote |
+
+## Тестирование ViewModel
+
+ViewModel проверяется отдельно от DOM, если содержит значимую orchestration:
+
+```ts
+it('переводит NetworkUnavailable в retryable UI state', async () => {
+  const getTripOverview = new StubGetTripOverview({
+    error: new NetworkUnavailable(),
+  });
+
+  const { result } = renderHook(
+    () => useTripDetailsViewModel('trip-1'),
+    {
+      wrapper: createApplicationWrapper({
+        useCases: { getTripOverview },
+      }),
+    },
+  );
+
+  await waitFor(() => {
+    expect(result.current.state).toEqual({
+      status: 'error',
+      message: 'Нет подключения к сети',
+      canRetry: true,
+    });
+  });
+});
+```
+
+Проверяются:
+
+- начальное состояние;
+- переходы loading/success/error;
+- маппинг Domain Result в UI Model;
+- UI Actions и построение Command;
+- инвалидация presentation-кэша;
+- UI Effects;
+- защита от устаревшего async-результата.
+
+Вместо `jest.mock('@data/repositories')` ViewModel получает тестовый application graph. Это сохраняет ту же DI-границу, что production.
+
+## Тестирование Compound Components
+
+Compound Component проверяется через публичную композицию:
+
+```tsx
+it('вызывает addPlace выбранного места', async () => {
+  const user = userEvent.setup();
+  const addPlace = vi.fn();
+
+  render(
+    <TripPlanner
+      state={successfulPlannerState}
+      actions={{ ...defaultActions, addPlace }}
+    >
+      <TripPlanner.PlaceSuggestions />
+    </TripPlanner>,
+  );
+
+  await user.click(
+    screen.getByRole('button', { name: 'Добавить музей' }),
+  );
+
+  expect(addPlace).toHaveBeenCalledWith('museum');
+});
+```
+
+Проверяется:
+
+- отображение вариантов UI State;
+- вызов публичных Actions;
+- допустимая перестановка частей;
+- ошибка использования вне Root, если это контракт;
+- keyboard navigation и focus management;
+- ARIA-роли и accessible names.
+
+Repository и Data Source здесь не нужны. View получает готовое presentation API.
+
+## Component и Feature Integration Tests
+
+Интеграционный тест App соединяет реальный View, ViewModel и use case с управляемыми внешними адаптерами:
+
+```text
+Page
+  ↓
+ViewModel
+  ↓
+Real Use Case
+  ↓
+In-memory Repository
+```
+
+Он полезен для проверки, что:
+
+- пользовательское действие создаёт корректную Command;
+- успешный сценарий меняет экран;
+- доменная ошибка показывается в нужном месте;
+- навигация происходит после завершения операции;
+- query invalidation обновляет нужное представление.
+
+Такой тест даёт больше уверенности, чем одновременный mock ViewModel, router, Repository и query client.
+
+## Test Application Graph
+
+Тесты собирают зависимости тем же способом, что production:
+
+```ts
+function createTestApplication(
+  overrides: Partial<TestAdapters> = {},
+): TestApplication {
+  const adapters = {
+    clock: new FixedClock(DEFAULT_NOW),
+    trips: new InMemoryTripRepository(),
+    weather: new StubWeatherRepository(defaultForecast),
+    places: new InMemoryPlaceRepository(defaultPlaces),
+    ...overrides,
+  };
+
+  return {
+    application: createUseCases(adapters),
+    adapters,
+  };
+}
+```
+
+Тест получает и готовое приложение, и ссылки на адаптеры для подготовки состояния и проверки результата.
+
+Каждый тест создаёт новый graph. Общие изменяемые singleton между тестами запрещены.
+
+## Demo adapters не равны test doubles
+
+Demo-реализация предназначена для интерактивной демонстрации и может содержать задержки, подготовленные данные и сценарии ошибок. Test double предназначен для точного, быстрого и детерминированного теста.
+
+Можно переиспользовать качественный in-memory Repository, но не следует автоматически использовать весь demo mode в тестах.
+
+Выбор режима происходит в Composition Root:
+
+```text
+createProductionApplication(config)
+createDemoApplication(config)
+createTestApplication(overrides)
+```
+
+Data не читает глобальный `IS_DEMO_MODE` внутри каждой фабрики.
+
+## Contract Tests внешнего API
+
+Mock HTTP не гарантирует, что настоящий сервер соответствует fixture. Для критичных интеграций полезны:
+
+- проверка OpenAPI/JSON Schema;
+- consumer-driven contracts;
+- тест против sandbox-среды;
+- периодическая проверка реальных безопасных endpoints;
+- fixture, полученная из версионируемого контракта.
+
+Contract test должен обнаружить изменение поля или enum раньше, чем оно сломает production-маппер.
+
+Тесты против внешней среды не заменяют локальные: они медленнее и могут быть нестабильны.
+
+## E2E
+
+E2E покрывает небольшой набор критичных пользовательских путей:
+
+- запуск и восстановление сессии;
+- создание основной Entity;
+- ключевая mutation;
+- offline/reconnect сценарий;
+- deep link;
+- критичная нативная интеграция.
+
+E2E проверяет систему снаружи и не должен повторять все комбинации Domain. Граничные бизнес-случаи дешевле и точнее проверяются на нижних уровнях.
+
+Тестовые данные должны создаваться через стабильный API/fixture mechanism, а не через длинную цепочку UI-шагов перед каждым тестом, если сами шаги не являются предметом проверки.
+
+## Тестирование ошибок
+
+Ошибка проверяется на уровне её владельца:
+
+| Ошибка | Тест |
+|---|---|
+| Нарушение `DateRange` | unit Value Object |
+| `TripNotFound` | use case |
+| malformed API response | Mapper/Data Source |
+| network → stale fallback | Repository implementation |
+| error → локализованный UI State | ViewModel |
+| render crash → fallback | Error Boundary |
+| sync conflict | integration Data + use case/App |
+
+Не проверяйте локализованную строку в Domain-тесте и AxiosError в View-тесте.
+
+## Время, случайность и таймеры
+
+Бизнес-время внедряется через `Clock`:
+
+```ts
+const clock = new FixedClock(
+  Instant.parse('2026-08-06T10:00:00Z'),
+);
+```
+
+UI-таймер проверяется fake timers:
+
+```ts
+vi.useFakeTimers();
+
+await vi.advanceTimersByTimeAsync(30_000);
+
+expect(screen.getByText('Код обновлён')).toBeVisible();
+```
+
+Не смешивайте `Date.now()` из production и fake timers без единой стратегии. Тест должен контролировать источник времени, влияющий на поведение.
+
+Случайные идентификаторы и shuffle-алгоритмы также получают управляемый generator, если результат важен тесту.
+
+## Параллельность и гонки
+
+Асинхронные тесты должны проверять:
+
+- более старый ответ не перезаписывает новый;
+- повторный click не создаёт две команды;
+- отменённый запрос не показывает ошибку;
+- transaction откатывается полностью;
+- sync worker не обрабатывает одну операцию параллельно;
+- optimistic update восстанавливается после failure.
+
+Не используйте произвольные задержки `sleep(100)`. Ожидайте наблюдаемое состояние, управляйте promise вручную или используйте fake timers.
+
+## Snapshot tests
+
+Большие snapshots JSX редко объясняют, какое поведение сломалось. Предпочтительнее assertions через роль, имя и видимый результат.
+
+Snapshots полезны для:
+
+- небольших стабильных сериализованных форматов;
+- миграционных fixture;
+- сгенерированного публичного schema;
+- ограниченного визуального результата при осознанном review.
+
+Snapshot не заменяет проверку доступности и пользовательского действия.
+
+## Coverage
+
+Coverage показывает непосещённые строки, но не качество сценариев. Высокое покрытие может сосуществовать с отсутствием проверки главного инварианта.
+
+Полезнее определить обязательные риски:
+
+- каждый Domain invariant имеет тест;
+- каждый use case имеет success и значимые failure paths;
+- каждый Mapper проверяет несовместимые внешние данные;
+- каждая cache/sync policy имеет матрицу;
+- каждый критичный пользовательский путь имеет integration/E2E проверку.
+
+Порог coverage можно использовать как сигнал резкого падения, но не как единственную цель.
+
+## Тестирование конфигурируемого поведения
+
+Функциональность с пользовательскими настройками удобно тестировать не как один большой feature, а по цепочке:
+
+```text
+Definition
+  + Override
+      ↓
+Effective Configuration
+      ↓
+Platform Adapter
+      ↓
+UI Action
+```
+
+Каждый переход имеет отдельный контракт и собственные риски.
+
+### Матрица Definition и Override
+
+Базовый resolver должен проверяться таблицей:
+
+| Definition | Override | Ожидаемый результат |
+|---|---|---|
+| enabled default | отсутствует | enabled с default value |
+| enabled default | assigned | enabled с пользовательским value |
+| enabled default | disabled | disabled без value |
+| обновлённый default | отсутствует | новое default value |
+| обновлённый default | старый assigned | сохранённое пользовательское value |
+
+Последние две строки защищают важное правило обновления приложения: изменение default применяется только к пользователям без override.
+
+Тест должен сравнивать наблюдаемый Domain Result, а не количество вызовов внутреннего resolver.
 
 ```typescript
-// data/repositories/index.ts
-import { IS_DEMO_MODE } from '@/common/config/demoMode';
-import { AuthRepository } from './AuthRepository';
-import { createMockAuthRepository } from './AuthRepository.mock';
+it('использует новый default при отсутствии override', () => {
+  const result = resolveEffectiveConfiguration({
+    definition: definition({ defaultValue: 'Primary+K' }),
+    override: undefined,
+  });
 
-const createAuthRepository = () =>
-  IS_DEMO_MODE ? createMockAuthRepository() : new AuthRepository();
-
-export { createAuthRepository };
+  expect(result).toEqual({
+    status: 'enabled',
+    value: 'Primary+K',
+  });
+});
 ```
 
-## Правила и ограничения
+### Канонизация как отдельный Domain Service
 
-| Слой | Что тестировать | Что мокировать |
-|------|----------------|----------------|
-| `Domain` | Бизнес-правила, валидацию, алгоритмы | Репозитории, провайдеры (через интерфейсы) |
-| `Data` | Маппинг ответов, обработку ошибок HTTP, логику адаптеров | HTTP-клиент (axios-mock-adapter), нативные модули |
-| `App` (хуки) | Инициализацию, lifecycle запросов, побочные эффекты | Репозитории через mock-файлы, router |
-| `App` (компоненты) | Отрисовку при разных состояниях, взаимодействие | Хуки через jest.mock |
+Если конфликт зависит от нормализованного представления, канонизация тестируется отдельно. Минимальная матрица:
 
-## Чек-лист тестирования
+- разный порядок частей даёт одинаковый ключ;
+- регистр и незначащие пробелы не влияют на результат;
+- платформенный placeholder раскрывается детерминированно;
+- дубликаты после раскрытия удаляются;
+- входной readonly-массив не мутируется.
 
-- [ ] Каждый use-case покрыт тестами: happy path, invalid input, ошибка репозитория
-- [ ] Маппинг данных в репозиториях проверен на граничных случаях (null, пустые строки, отсутствующие поля)
-- [ ] Хуки-мутации проверены на навигацию и инвалидацию кэша в `onSuccess`
-- [ ] Mock-адаптеры переключаются через конфигурацию, не через условия в коде слоёв
-- [ ] Тесты не зависят друг от друга (независимый beforeEach для каждого теста)
-- [ ] `any` в тестах запрещён так же, как и в продакшн-коде
+После этого тест конфликта может считать канонизацию доверенной зависимостью и фокусироваться на scope policy.
+
+### Матрица конфликтов
+
+Полезно разделять совпадение значения и пересечение областей:
+
+| Значение совпало | Scope пересекается | Команда активна | Конфликт |
+|---|---|---|---|
+| нет | да | да | нет |
+| да | нет | да | нет |
+| да | да | нет | нет |
+| да | да | да | да |
+
+Дополнительно проверяются:
+
+- команда не конфликтует сама с собой;
+- global scope пересекается с любой локальной областью;
+- одинаковые local scope пересекаются;
+- разные local scope могут использовать одинаковое назначение;
+- возвращается конфликтующая модель, а не только `true`.
+
+Последний пункт позволяет App показать пользователю, какое действие уже использует выбранное назначение.
+
+### Contract suite для хранилища Override
+
+Contract test запускается для production repository и in-memory fake:
+
+```typescript
+const hotkeySettingsRepositoryContract = (
+  createRepository: () => HotkeySettingsRepository,
+) => {
+  it('заменяет override с тем же actionId', async () => {
+    const repository = createRepository();
+
+    await repository.save(assignedOverride('search', 'Alt+/'));
+    await repository.save(disabledOverride('search'));
+
+    await expect(repository.load()).resolves.toEqual([
+      disabledOverride('search'),
+    ]);
+  });
+};
+```
+
+Обязательные сценарии:
+
+- пустое хранилище возвращает пустую коллекцию;
+- `save` добавляет новую запись;
+- повторный `save` заменяет запись того же действия;
+- `remove` не затрагивает остальные действия;
+- `clear` удаляет все override;
+- порядок записей не используется как бизнес-гарантия, если он не объявлен контрактом.
+
+### Повреждённые persistent data
+
+Данные после `JSON.parse` проверяются как `unknown`. Data-тесты должны включать:
+
+```text
+невалидный JSON
+не-массив вместо коллекции
+неизвестный actionId
+неизвестный discriminator
+assigned без value
+неизвестный modifier
+лишние поля старой версии
+```
+
+Ожидаемое поведение выбирается явно: проигнорировать отдельную запись, вернуть пустое состояние, выполнить миграцию или сообщить инфраструктурную ошибку. Тест фиксирует выбранную degradation policy.
+
+Type assertion в fixture не является runtime-проверкой:
+
+```typescript
+// Не проверяет фактическую структуру.
+const overrides = JSON.parse(raw) as HotkeyOverride[];
+```
+
+### Тестирование платформенного Input Adapter
+
+При поддержке физических клавиш нельзя ограничиваться одной раскладкой. Adapter получает минимальную структуру события, поэтому тесту не нужен настоящий браузер:
+
+```typescript
+expect(fromKeyboardEvent({
+  code: 'KeyB',
+  key: 'и',
+  ctrlKey: true,
+  altKey: false,
+  shiftKey: false,
+  metaKey: false,
+})).toEqual({
+  key: 'B',
+  modifiers: ['primary'],
+});
+```
+
+Полезная матрица:
+
+| `code` | `key` | Ожидаемое значение |
+|---|---|---|
+| `KeyB` | `b` | `B` |
+| `KeyB` | `и` | `B` |
+| `Slash` | `/` | `/` |
+| `Slash` | `.` | `/` |
+| `ArrowLeft` | `ArrowLeft` | `ArrowLeft` |
+
+Отдельно тестируется раскрытие основного модификатора для macOS и Windows/Linux. Платформу лучше передавать параметром адаптера, а не изменять глобальный `navigator` внутри теста.
+
+### Feature integration
+
+Integration-тест не должен повторять всю Domain-матрицу. Достаточно доказать основной сквозной путь:
+
+1. Provider загружает override из fake repository;
+2. View показывает effective label;
+3. пользователь выбирает новое назначение;
+4. Domain принимает или отклоняет изменение;
+5. успешный override сохраняется;
+6. конфликт преобразуется в доступное UI-сообщение;
+7. событие ввода запускает правильный UI action.
+
+Для проверки binding важнее наблюдаемый эффект — открылся поиск или переключилась панель, — а не факт вызова внутреннего hook.
+
+### Что не следует объединять в одном тесте
+
+Один тест не должен одновременно доказывать:
+
+- алгоритм канонизации;
+- политику scope;
+- JSON-сериализацию;
+- работу React Context;
+- поведение браузерного события.
+
+Такой тест медленный, хрупкий и не объясняет источник ошибки. Сквозная проверка нужна поверх устойчивых тестов отдельных границ, а не вместо них.
+
+Подробнее: [пример менеджера горячих клавиш](./examples/hotkey-manager.md).
+
+## Структура тестов
+
+Тесты можно размещать рядом с кодом или в зеркальной структуре. Важнее единообразие и понятные fixture:
+
+```text
+domain/trips/
+├── entities/
+│   ├── Trip.ts
+│   └── Trip.test.ts
+├── use-cases/
+│   ├── CreateTrip.ts
+│   └── CreateTrip.test.ts
+└── testing/
+    ├── tripBuilder.ts
+    └── InMemoryTripRepository.ts
+
+data/weather/
+├── DefaultWeatherRepository.ts
+├── DefaultWeatherRepository.test.ts
+└── testing/
+    └── weatherFixtures.ts
+```
+
+Тестовый helper не должен превращаться в скрытый framework с собственной логикой. Fixture остаются маленькими и позволяют явно переопределять значимые поля.
+
+## Антипаттерны
+
+### Mock всего модуля Data из ViewModel-теста
+
+Скрывает реальную DI-границу и делает тест зависимым от путей импортов. Передавайте test application graph.
+
+### Проверка private-методов
+
+Связывает тест с реализацией. Если private-алгоритм заслуживает отдельного теста, возможно, это самостоятельный Domain Service.
+
+### Ожидание точного количества внутренних вызовов
+
+Если количество не является контрактом, оптимизация кэша или batch изменит тест без изменения поведения.
+
+### Реальные часы и случайность
+
+Создают flaky tests. Внедряйте контролируемые источники.
+
+### Один общий mutable fake на suite
+
+Состояние протекает между тестами. Создавайте graph заново.
+
+### Тест только happy path
+
+Архитектурная ценность чаще проявляется в failure, fallback, retry и conflict paths.
+
+### Assertions по техническому тексту ошибки
+
+Проверяйте стабильный type/code или пользовательское отображение на соответствующем уровне.
+
+## Минимальная матрица feature
+
+Для законченной feature обычно достаточно следующего набора:
+
+| Уровень | Минимальная проверка |
+|---|---|
+| Entity/Value Object | инварианты и переходы |
+| Use Case | success, business failure, dependency failure |
+| Mapper | valid и malformed external data |
+| Repository | source policy и fallback |
+| ViewModel | UI states и actions |
+| View | пользователь видит состояние и может действовать |
+| Feature integration | основной путь App + Domain |
+| E2E | только если путь критичен |
+
+## Чек-лист
+
+- [ ] Тест проверяет наблюдаемое поведение, а не структуру реализации.
+- [ ] Domain-тест не запускает React или реальный I/O.
+- [ ] Время и случайность контролируются.
+- [ ] Use case создаётся через явные зависимости.
+- [ ] Fake Repository соблюдает тот же contract suite.
+- [ ] Mapper проверяется на несовместимые внешние данные.
+- [ ] Repository policy покрыта матрицей cache/network.
+- [ ] ViewModel получает test application graph.
+- [ ] Compound Components проверяются через публичный UI API.
+- [ ] Ошибка тестируется на уровне её владельца.
+- [ ] Асинхронные тесты не используют произвольный sleep.
+- [ ] Изменяемое состояние не разделяется между тестами.
+- [ ] Критичные пути покрыты integration или E2E.
+- [ ] Definition, override и effective configuration проверяются независимой матрицей.
+- [ ] Persistent data тестируются как `unknown`, включая повреждённые записи.
+- [ ] Платформенный input adapter проверяется на разных раскладках.
+- [ ] Coverage используется как сигнал, а не замена анализа рисков.
 
 ## Дальнейшее чтение
 
-- [Слои архитектуры](./layers.md) — границы ответственности, которые тестирование отражает
-- [Интеграция нативных модулей](./examples/native-integration.md) — паттерны мокирования SecureStore и биометрии
-- [Стандарты кода](./coding-standards.md) — правила типизации, применяемые и в тестах
+- [Слои архитектуры](./layers.md) — границы объектов тестирования.
+- [Внедрение зависимостей](./cross-cutting/di.md) — test application graph.
+- [Обработка ошибок](./error-handling.md) — матрица failure paths.
+- [Compound Components и MVVM](./compound-components.md) — публичный API View.
+- [Оффлайн-режим](./examples/offline-mode.md) — cache и sync scenarios.
+- [Менеджер горячих клавиш](./examples/hotkey-manager.md) — пример тестирования конфигурации и input adapter.

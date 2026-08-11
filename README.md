@@ -9,29 +9,43 @@
 - **Трёхслойная модель** `App → Domain ← Data` с инверсией зависимостей
 - **Управление состоянием** — классификация UI / Server / Business / Persistent State и правила их размещения
 - **Обработка ошибок** — типизированные интерфейсы ошибок по слоям, retry-политики, Error Boundary
-- **Нативные модули** — паттерн Адаптер для SecureStore, Keychain, биометрии, камеры
+- **Платформенные адаптеры** — браузерный ввод, permissions, SecureStore, биометрия и lifecycle подписок
+- **Dependency Injection** — Composition Root, жизненные циклы и тестовые реализации
+- **Compound Components + MVVM** — композиция сложного UI без утечки бизнес-логики во View
 - **Стандарты кода** — правила именования, типизации DTO, организации экспортов
-- **Практические примеры** — пошаговая реализация GET-запроса и мутации (POST)
+- **Тестирование** — стратегия unit, contract, integration и архитектурных проверок
+- **Практические примеры** — от GET/POST до offline-mode и переназначаемых горячих клавиш
 
 ## Структура документации
 
 ```
-docs/
+docs-architecture/
 ├── intro.md                        # Введение и мотивация
 ├── architecture-overview.md        # Обзор архитектуры
 ├── layers.md                       # Слои: App, Domain, Data
+├── compound-components.md          # Compound Components и MVVM
 ├── coding-standards.md             # Стандарты написания кода
-├── error-handling.md               # Обработка ошибок и загрузки
+├── navigation.md                   # Навигация и guards
+├── testing.md                      # Стратегия тестирования
+├── error-handling.md               # Обработка ошибок и восстановление
 ├── glossary.md                     # Глоссарий терминов
 ├── cross-cutting/
 │   ├── state-management.md         # Управление состоянием и границы слоёв
+│   ├── di.md                       # Dependency Injection и Composition Root
+│   ├── platform-adapters.md        # Браузерные и нативные границы
 │   └── index.md
 └── examples/
     ├── feature-get.md              # Пример: GET-запрос (Query)
     ├── feature-post.md             # Пример: мутация (POST)
     ├── native-integration.md       # Пример: нативные модули
+    ├── polling.md                  # Пример: polling и countdown
+    ├── form-validation.md          # Пример: многошаговая форма
+    ├── offline-mode.md             # Пример: управляемая деградация
+    ├── hotkey-manager.md           # Пример: горячие клавиши и overrides
     └── index.md
 ```
+
+Начальная точка чтения — [введение](./docs-architecture/intro.md), а для конкретной задачи можно сразу открыть [каталог примеров](./docs-architecture/examples/index.md).
 
 ## Быстрый старт
 

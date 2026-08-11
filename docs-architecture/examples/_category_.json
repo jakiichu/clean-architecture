@@ -1,0 +1,8 @@
+{
+  "label": "Практические примеры",
+  "position": 10,
+  "link": {
+    "type": "doc",
+    "id": "examples/index"
+  }
+}

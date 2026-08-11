@@ -1,0 +1,8 @@
+{
+  "label": "Сквозные механизмы",
+  "position": 6,
+  "link": {
+    "type": "doc",
+    "id": "cross-cutting/index"
+  }
+}

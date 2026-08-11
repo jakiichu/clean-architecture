@@ -3,25 +3,24 @@ import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 const sidebars: SidebarsConfig = {
     cleanCodeSidebar: [
         'intro',
+        'conventions',
         {
             type: 'category',
-            label: 'Основы',
-            collapsed: false,
+            label: 'Основы читаемого кода',
+            collapsed: true,
             items: [
                 'naming',
-                'functions',
                 'comments',
                 'formatting',
                 'error-handling',
-                'smr',
-                'classes',
+                'srp',
                 'testing',
             ],
         },
         {
             type: 'category',
-            label: 'Создание',
-            collapsed: false,
+            label: 'Проектирование нового кода',
+            collapsed: true,
             items: [
                 'creation/index',
                 'creation/starting-fresh',
@@ -32,8 +31,8 @@ const sidebars: SidebarsConfig = {
         },
         {
             type: 'category',
-            label: 'Анализ',
-            collapsed: false,
+            label: 'Диагностика качества',
+            collapsed: true,
             items: [
                 'analysis/index',
                 'analysis/code-smells',
@@ -44,8 +43,8 @@ const sidebars: SidebarsConfig = {
         },
         {
             type: 'category',
-            label: 'Рефакторинг',
-            collapsed: false,
+            label: 'Безопасный рефакторинг',
+            collapsed: true,
             items: [
                 'refactoring/index',
                 'refactoring/techniques',

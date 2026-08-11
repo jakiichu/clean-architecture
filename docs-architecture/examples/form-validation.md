@@ -1,6 +1,6 @@
 ---
 title: Пример — Многошаговая форма (Onboarding)
-sidebar_position: 7
+sidebar_position: 6
 ---
 
 # Пример: Многошаговая форма и онбординг
@@ -17,7 +17,7 @@ sidebar_position: 7
 3. Создание PIN-кода (6 цифр) → сохранение в SecureStore
 4. Предложение настройки биометрии → опционально
 
-Данные передаются между шагами через Zustand-стор (не через навигационные параметры), так как между шагами могут быть переходы вперёд и назад.
+Незавершённый черновик принадлежит конкретному onboarding flow и хранится в feature-scoped Zustand-store. Маршрут передаёт `flowId`, поэтому второй flow, deep link и очистка состояния остаются управляемыми.
 
 ## Шаг 1. Контракты в Domain
 
@@ -51,7 +51,7 @@ interface ISetupPinCodeParams {
 const createSetupPinCodeUseCase = (pinProvider: IPinProvider) => {
   const execute = async (params: ISetupPinCodeParams): Promise<void> => {
     if (params.pin.length !== 6 || !/^\d{6}$/.test(params.pin)) {
-      throw new Error('PIN must be exactly 6 digits');
+      throw new InvalidPinFormatError();
     }
     await pinProvider.savePin(params.pin);
   };
@@ -70,20 +70,29 @@ UI-состояние между шагами хранится в Zustand. Эт�
 // src/common/store/useOnboardingStore.ts
 import { create } from 'zustand';
 
+interface IOnboardingDraft {
+  readonly phoneNumber: string | null;
+}
+
 interface IOnboardingState {
-  phoneNumber: string | null;
-  pinCandidate: string | null;
-  setPhoneNumber: (phone: string) => void;
-  setPinCandidate: (pin: string) => void;
-  resetOnboarding: () => void;
+  drafts: Record<string, IOnboardingDraft>;
+  createDraft: (flowId: string) => void;
+  setPhoneNumber: (flowId: string, phone: string) => void;
+  removeDraft: (flowId: string) => void;
 }
 
 const useOnboardingStore = create<IOnboardingState>((set) => ({
-  phoneNumber: null,
-  pinCandidate: null,
-  setPhoneNumber: (phone) => set({ phoneNumber: phone }),
-  setPinCandidate: (pin) => set({ pinCandidate: pin }),
-  resetOnboarding: () => set({ phoneNumber: null, pinCandidate: null }),
+  drafts: {},
+  createDraft: (flowId) => set((state) => ({
+    drafts: { ...state.drafts, [flowId]: { phoneNumber: null } },
+  })),
+  setPhoneNumber: (flowId, phoneNumber) => set((state) => ({
+    drafts: { ...state.drafts, [flowId]: { ...state.drafts[flowId], phoneNumber } },
+  })),
+  removeDraft: (flowId) => set((state) => {
+    const { [flowId]: removedDraft, ...remainingDrafts } = state.drafts;
+    return { drafts: remainingDrafts };
+  }),
 }));
 
 export { useOnboardingStore };
@@ -99,22 +108,21 @@ export { useOnboardingStore };
 // src/common/hooks/useSendSmsMutation.ts
 import { useMutation } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { createAuthRepository } from '@data/repositories';
+import { useApplicationDependencies } from '@/app/providers/ApplicationProvider';
 import { useOnboardingStore } from '@/common/store/useOnboardingStore';
 import { ROUTER_PATH } from '@/common/const/routerPath';
 
-const authRepositoryInstance = createAuthRepository();
-
-const useSendSmsMutation = () => {
+const useSendSmsMutation = (flowId: string) => {
+  const { auth } = useApplicationDependencies();
   const { setPhoneNumber } = useOnboardingStore();
 
   return useMutation<void, Error, { phoneNumber: string }>({
     mutationFn: async ({ phoneNumber }) => {
-      await authRepositoryInstance.sendActivationSmsCode(phoneNumber);
+      await auth.sendActivationSmsCode.execute({ phoneNumber });
     },
     onSuccess: (_, { phoneNumber }) => {
-      setPhoneNumber(phoneNumber);        // Сохраняем для следующего шага
-      router.push(ROUTER_PATH.AUTH_SMS);  // Переход вперёд
+      setPhoneNumber(flowId, phoneNumber);
+      router.push({ pathname: ROUTER_PATH.AUTH_SMS, params: { flowId } });
     },
   });
 };
@@ -128,35 +136,28 @@ export { useSendSmsMutation };
 // src/common/hooks/useVerifySmsMutation.ts
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { createVerifySmsCodeUseCase } from '@domain/auth/use-cases/verifySmsCodeUseCase';
-import { createAuthRepository } from '@data/repositories';
-import { SecureSessionStorage } from '@data/storage/SecureSessionStorage';
+import { useApplicationDependencies } from '@/app/providers/ApplicationProvider';
 import { useOnboardingStore } from '@/common/store/useOnboardingStore';
 import { ROUTER_PATH } from '@/common/const/routerPath';
 import { QUERY_KEYS } from '@/common/const/queryKeys';
 
-const authRepositoryInstance = createAuthRepository();
-const secureStorageInstance = new SecureSessionStorage();
-const useCaseInstance = createVerifySmsCodeUseCase({ authRepository: authRepositoryInstance });
-
-const useVerifySmsMutation = () => {
+const useVerifySmsMutation = (flowId: string) => {
+  const { auth } = useApplicationDependencies();
   const queryClientInstance = useQueryClient();
-  const { phoneNumber } = useOnboardingStore();
+  const phoneNumber = useOnboardingStore((state) => state.drafts[flowId]?.phoneNumber);
 
   return useMutation<void, Error, { smsCode: string }>({
     mutationFn: async ({ smsCode }) => {
-      if (!phoneNumber) throw new Error('Phone number is missing');
+      if (!phoneNumber) throw new MissingOnboardingContextError();
 
-      const sessionResult = await useCaseInstance.execute({
+      await auth.verifySmsCode.execute({
         phoneNumber,
         smsCode,
       });
-
-      await secureStorageInstance.saveSessionData(sessionResult);
     },
     onSuccess: async () => {
       await queryClientInstance.invalidateQueries({ queryKey: QUERY_KEYS.SESSION.ACTIVE });
-      router.push(ROUTER_PATH.AUTH_PIN_SETUP);
+      router.push({ pathname: ROUTER_PATH.AUTH_PIN_SETUP, params: { flowId } });
     },
   });
 };
@@ -170,18 +171,16 @@ export { useVerifySmsMutation };
 // src/common/hooks/usePinSetupMutation.ts
 import { useMutation } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { createSetupPinCodeUseCase } from '@domain/auth/use-cases/setupPinCodeUseCase';
-import { PinSecureStorageAdapter } from '@data/storage/PinSecureStorageAdapter';
+import { useApplicationDependencies } from '@/app/providers/ApplicationProvider';
 import { ROUTER_PATH } from '@/common/const/routerPath';
 
-const pinProviderInstance = new PinSecureStorageAdapter();
-const useCaseInstance = createSetupPinCodeUseCase(pinProviderInstance);
+const usePinSetupMutation = (flowId: string) => {
+  const { auth } = useApplicationDependencies();
 
-const usePinSetupMutation = () => {
   return useMutation<void, Error, { pin: string }>({
-    mutationFn: ({ pin }) => useCaseInstance.execute({ pin }),
+    mutationFn: ({ pin }) => auth.setupPinCode.execute({ pin }),
     onSuccess: () => {
-      router.push(ROUTER_PATH.AUTH_BIOMETRIC_SETUP);
+      router.push({ pathname: ROUTER_PATH.AUTH_BIOMETRIC_SETUP, params: { flowId } });
     },
   });
 };
@@ -203,10 +202,10 @@ import { formatPhoneNumber } from '@/utils/phoneFormat';
 
 const PHONE_DIGITS_COUNT = 11;
 
-const usePhonePresenter = () => {
+const usePhonePresenter = (flowId: string) => {
   const [phoneInputValue, setPhoneInputValue] = useState<string>('');
   const [inputError, setInputError] = useState<string | null>(null);
-  const sendSmsMutation = useSendSmsMutation();
+  const sendSmsMutation = useSendSmsMutation(flowId);
 
   const handlePhoneChange = useCallback((rawInput: string) => {
     const formattedPhone: string = formatPhoneNumber(rawInput);
@@ -246,9 +245,9 @@ import { useVerifySmsMutation } from '@/common/hooks/useVerifySmsMutation';
 
 const SMS_CODE_LENGTH = 6;
 
-const useSmsPresenter = () => {
+const useSmsPresenter = (flowId: string) => {
   const [codeValue, setCodeValue] = useState<string>('');
-  const verifyMutation = useVerifySmsMutation();
+  const verifyMutation = useVerifySmsMutation(flowId);
 
   const handleCodeChange = useCallback((input: string) => {
     const digitsOnly: string = input.replace(/\D/g, '').slice(0, SMS_CODE_LENGTH);
@@ -281,7 +280,8 @@ import { UIButton } from '@/ui-kit/UIButton';
 import { usePhonePresenter } from './phone/usePhonePresenter';
 
 export default function PhoneScreen() {
-  const { phoneValue, errorMessage, isPending, onPhoneChange, onSubmit } = usePhonePresenter();
+  const flowId = useStableOnboardingFlowId();
+  const { phoneValue, errorMessage, isPending, onPhoneChange, onSubmit } = usePhonePresenter(flowId);
 
   return (
     <View>
@@ -314,7 +314,8 @@ import { UIPinInput } from '@/ui-kit/UIPinInput';
 import { useSmsPresenter } from './sms/useSmsPresenter';
 
 export default function SmsScreen() {
-  const { codeValue, isPending, errorMessage, onCodeChange } = useSmsPresenter();
+  const { flowId } = useLocalSearchParams<{ flowId: string }>();
+  const { codeValue, isPending, errorMessage, onCodeChange } = useSmsPresenter(flowId);
 
   return (
     <View>
@@ -336,18 +337,18 @@ export default function SmsScreen() {
 
 ## Разбор архитектурных решений
 
-### Передача данных между шагами через Zustand, не через params
+### Черновик flow в Zustand и `flowId` в маршруте
 
 ```typescript
 // ❌ Антипаттерн: бизнес-данные в URL-параметрах
 router.push({ pathname: '/sms', params: { phone: '+79001234567', token: 'abc...' } });
 
-// ✅ Правильно: параметры в Zustand, переход без данных
-setPhoneNumber('+79001234567');
-router.push(ROUTER_PATH.AUTH_SMS);
+// ✅ Правильно: маршрут содержит только ID конкретного черновика
+const flowId = createOnboardingDraft({ phoneNumber: '+79001234567' });
+router.push({ pathname: ROUTER_PATH.AUTH_SMS, params: { flowId } });
 ```
 
-URL-параметры видны в логах навигации, могут быть перехвачены или изменены. Zustand хранит данные в памяти и сбрасывается при выходе.
+URL-параметры видны в логах навигации, могут быть перехвачены или изменены. Feature-store хранит сам черновик, а `flowId` позволяет выбрать правильный экземпляр и явно очистить его после завершения или отмены.
 
 ### Синтаксическая валидация в презентере, доменная — в use-case
 
@@ -360,7 +361,7 @@ if (digitsOnly.length !== 11) {
 
 // Domain/UseCase: бизнес-проверка (правила)
 if (!/^\d{6}$/.test(params.pin)) {
-  throw new Error('PIN must be exactly 6 digits');
+  throw new InvalidPinFormatError();
 }
 ```
 
@@ -404,7 +405,7 @@ src/common/store/
 ## Чек-лист многошаговой формы
 
 - [ ] Каждый шаг — отдельный хук мутации
-- [ ] Данные между шагами хранятся в Zustand, не в URL-параметрах
+- [ ] В маршруте передаётся только `flowId`, а сам черновик хранится в feature-scoped store
 - [ ] Синтаксическая валидация — в презентере, бизнес-правила — в use-case
 - [ ] `isPending` блокирует ввод и кнопки во время запроса
 - [ ] Ошибки мутации отображаются пользователю (не только console.error)

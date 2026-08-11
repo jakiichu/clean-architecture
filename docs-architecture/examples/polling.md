@@ -1,6 +1,6 @@
 ---
 title: Пример — Polling и таймер обратного отсчёта
-sidebar_position: 6
+sidebar_position: 5
 ---
 
 # Пример: Polling и таймер обратного отсчёта
@@ -56,12 +56,20 @@ export type { IOtpRepository };
 import type { IOtpRepository } from '../interfaces/IOtpRepository';
 import type { IOtpCode } from '../entities/IOtpCode';
 
-const createGetOtpCodeUseCase = (repository: IOtpRepository) => {
+interface IClock {
+  nowTimestamp: () => number;
+}
+
+class OtpExpiredError extends Error {
+  readonly code = 'otp_expired';
+}
+
+const createGetOtpCodeUseCase = (repository: IOtpRepository, clock: IClock) => {
   const execute = async (): Promise<IOtpCode> => {
     const otpCode = await repository.fetchCurrentCode();
 
-    if (!otpCode.code || otpCode.expiresAtTimestamp <= Date.now()) {
-      throw new Error('Received an already expired code');
+    if (!otpCode.code || otpCode.expiresAtTimestamp <= clock.nowTimestamp()) {
+      throw new OtpExpiredError();
     }
 
     return otpCode;
@@ -70,7 +78,8 @@ const createGetOtpCodeUseCase = (repository: IOtpRepository) => {
   return { execute };
 };
 
-export { createGetOtpCodeUseCase };
+export { OtpExpiredError, createGetOtpCodeUseCase };
+export type { IClock };
 ```
 
 ## Шаг 2. Реализация в Data
@@ -116,7 +125,26 @@ class OtpRepository implements IOtpRepository {
 export { OtpRepository };
 ```
 
-## Шаг 3. Хук в App с polling и таймером
+## Шаг 3. Сборка зависимостей
+
+Конкретные реализации создаются в Composition Root. Только эта точка App импортирует одновременно Domain и Data:
+
+```typescript
+// app/bootstrap/createApplication.ts
+const otpRepository = new OtpRepository(httpClient);
+const systemClock = createSystemClock();
+
+const application = {
+  otp: {
+    getCurrentCode: createGetOtpCodeUseCase(otpRepository, systemClock),
+    getConfig: createGetOtpConfigUseCase(otpRepository),
+  },
+};
+```
+
+Граф предоставляется React-дереву корневым provider. Хук получает готовые сценарии через узкий `useApplicationDependencies`, не создавая репозиторий самостоятельно.
+
+## Шаг 4. Хук в App с polling и таймером
 
 Ключевой элемент паттерна: два отдельных `useQuery` с разными `staleTime`. Первый кэширует конфигурацию на 24 часа. Второй обновляет код каждые 30 секунд, но только когда есть конфигурация (`enabled: !!configQuery.data`).
 
@@ -124,18 +152,14 @@ export { OtpRepository };
 // src/common/hooks/useOtpQuery.ts
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { OtpRepository } from '@data/repositories/OtpRepository';
-import { createGetOtpCodeUseCase } from '@domain/otp/use-cases/GetOtpCodeUseCase';
 import { QUERY_KEYS } from '@/common/const/queryKeys';
+import { useApplicationDependencies } from '@/app/providers/ApplicationProvider';
 
 const CODE_ROTATION_INTERVAL_MS = 30_000;
 const CONFIG_CACHE_MS = 24 * 60 * 60 * 1_000;
 
-// Создаём экземпляры вне хука — они не зависят от React-контекста
-const repositoryInstance = new OtpRepository();
-const useCaseInstance = createGetOtpCodeUseCase(repositoryInstance);
-
 const useOtpQuery = () => {
+  const { otp } = useApplicationDependencies();
   const queryClientInstance = useQueryClient();
   const [secondsRemaining, setSecondsRemaining] = useState<number>(
     CODE_ROTATION_INTERVAL_MS / 1_000
@@ -145,7 +169,7 @@ const useOtpQuery = () => {
   // Запрос конфигурации (кэшируется на 24 часа)
   const configQuery = useQuery({
     queryKey: QUERY_KEYS.OTP.CONFIG,
-    queryFn: () => repositoryInstance.fetchConfig(),
+    queryFn: () => otp.getConfig.execute(),
     staleTime: CONFIG_CACHE_MS,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
@@ -154,7 +178,7 @@ const useOtpQuery = () => {
   // Запрос кода (обновляется каждые 30 сек)
   const otpQuery = useQuery({
     queryKey: QUERY_KEYS.OTP.CURRENT,
-    queryFn: () => useCaseInstance.execute(),
+    queryFn: () => otp.getCurrentCode.execute(),
     enabled: !!configQuery.data,
     refetchInterval: CODE_ROTATION_INTERVAL_MS,
     refetchIntervalInBackground: false, // Экономия заряда батареи
@@ -194,7 +218,9 @@ const useOtpQuery = () => {
 export { useOtpQuery };
 ```
 
-## Шаг 4. UI-компонент
+`Date.now()` допустим в UI-таймере: это presentation-механизм, а не проверка бизнес-инварианта. Domain получает время только через `IClock`, поэтому тест может использовать фиксированное значение.
+
+## Шаг 5. UI-компонент
 
 ```tsx
 // app/modules/otp/OtpScreen.tsx
@@ -265,6 +291,8 @@ const styles = StyleSheet.create({
 ## Чек-лист паттерна
 
 - [ ] Бизнес-логика (валидность кода, срок жизни) изолирована в Domain use-case
+- [ ] Domain получает текущее время через `IClock`
+- [ ] Repository и use case создаются только в Composition Root
 - [ ] Конфигурация кэшируется отдельным запросом с большим staleTime
 - [ ] Ротация управляется через `refetchInterval`, не через ручной `setInterval` для запросов
 - [ ] `refetchIntervalInBackground: false` для экономии батареи
